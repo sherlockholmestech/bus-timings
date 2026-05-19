@@ -1,6 +1,8 @@
 node_modules/
 .expo/
 dist/
+tmp/
+android/
 web-build/
 .env
 npm-debug.log*

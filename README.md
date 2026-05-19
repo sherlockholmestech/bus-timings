@@ -54,6 +54,40 @@ npm run web     # open web target
 npm run typecheck
 ```
 
+## Android Builds
+
+For development on an Android device or emulator:
+
+```sh
+npm run android
+```
+
+For a production Android build, use EAS Build:
+
+```sh
+npm install -g eas-cli
+eas login
+eas build:configure
+eas build --platform android
+```
+
+When prompted by EAS, choose an Android package name such as `com.yourname.sgbustimings`.
+
+Common Android build profiles:
+
+```sh
+eas build --platform android --profile preview     # installable APK for testing
+eas build --platform android --profile production  # Play Store AAB by default
+```
+
+To build locally instead of on EAS infrastructure:
+
+```sh
+eas build --platform android --local
+```
+
+The generated app uses `assets/icon.png`, produced from `assets/logo.svg`, as the Expo app icon and Android adaptive icon foreground.
+
 ## Notes
 
 - Arrival timings refresh every 20 seconds while a stop is selected.
