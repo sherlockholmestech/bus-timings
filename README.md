@@ -1,22 +1,62 @@
 # SG Bus Timings
 
-Mobile app for Singapore bus arrivals using LTA DataMall real-time Bus Arrival v3 and OpenStreetMap tiles.
+Expo mobile app for Singapore bus arrivals using LTA DataMall Bus Arrival v3 and OpenStreetMap tiles.
+
+## Features
+
+- Search Singapore bus stops by stop code, road, or landmark.
+- View bus stops on an OpenStreetMap/Leaflet map.
+- Render bus stop markers based on the current map viewport, with markers hidden when zoomed too far out.
+- Jump to current location with a dedicated locate control.
+- Pull-up drawer for selected bus stop details and live arrivals.
+- Arrival rows sorted by bus service number.
+- Operator-colored bus number badges.
+- Crowd-density indicator for each arriving bus.
+- Wheelchair-accessible arrival indicator.
+- Flexoki light, dark, and system theme modes.
+- Local storage for the LTA AccountKey and bus-stop cache.
+
+## Requirements
+
+- Node.js and npm.
+- Expo Go or an iOS/Android simulator.
+- LTA DataMall AccountKey from <https://datamall.lta.gov.sg/>.
+
+This app uses LTA DataMall `v3/BusArrival` for live timings and `BusStops` for the searchable stop cache.
 
 ## Setup
 
-1. Request an LTA DataMall AccountKey from <https://datamall.lta.gov.sg/>.
-2. Install dependencies:
+```sh
+npm install
+```
 
-   ```sh
-   npm install
-   ```
+Start the Expo dev server:
 
-3. Start Expo:
+```sh
+npm start
+```
 
-   ```sh
-   npm start
-   ```
+For local-only testing:
 
-4. Open the app in Expo Go or an emulator, paste your AccountKey, then refresh bus stops.
+```sh
+npm start -- --host localhost
+```
 
-The app stores the AccountKey and bus-stop cache locally on the device. Arrival timings refresh every 20 seconds while a bus stop is selected.
+Open the app, go to Settings, paste your LTA DataMall AccountKey, then sync bus stops.
+
+## Scripts
+
+```sh
+npm start       # start Expo
+npm run android # open Android target
+npm run ios     # open iOS target
+npm run web     # open web target
+npm run typecheck
+```
+
+## Notes
+
+- Arrival timings refresh every 20 seconds while a stop is selected.
+- The AccountKey is stored locally on the device via AsyncStorage.
+- Bus stop data is cached locally after sync; live arrivals still come from LTA.
+- OpenStreetMap tiles are loaded inside a WebView-backed Leaflet map.
