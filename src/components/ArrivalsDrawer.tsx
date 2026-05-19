@@ -114,7 +114,7 @@ function ArrivalRow({
 
   return (
     <View style={styles.arrivalRow}>
-      <View style={[styles.serviceBadge, { backgroundColor: operator.badge, borderColor: operator.accent }]}> 
+      <View style={[styles.serviceBadge, { backgroundColor: operator.badge, borderColor: operator.accent }]}>
         <Text style={[styles.serviceNo, { color: operator.text }]}>{service.ServiceNo}</Text>
         <Text style={[styles.operator, { color: operator.mutedText }]}>{service.Operator}</Text>
       </View>
