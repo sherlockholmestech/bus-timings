@@ -34,8 +34,15 @@ fi
 export JAVA_HOME="$JDK_DIR"
 export PATH="$JAVA_HOME/bin:$PATH"
 
+# Set Android SDK path
+export ANDROID_HOME="$HOME/Android/Sdk"
+export PATH="$PATH:$ANDROID_HOME/platform-tools:$ANDROID_HOME/cmdline-tools/latest/bin"
+
 echo "Using Java:"
 java -version
+
+echo ""
+echo "ANDROID_HOME: $ANDROID_HOME"
 
 echo "Building Android release APK..."
 cd "$SCRIPT_DIR/android"

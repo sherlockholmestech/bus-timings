@@ -3,31 +3,39 @@ import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
+  Dimensions,
+  Platform,
+  Pressable,
+  ScrollView,
+  StatusBar as NativeStatusBar,
+  StyleSheet,
+  useColorScheme,
+  View
+} from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import {
+  ActivityIndicator,
+  Appbar,
+  Button,
+  Divider,
+  IconButton,
+  List,
+  Provider as PaperProvider,
+  Searchbar,
+  SegmentedButtons,
+  Surface,
+  Text,
+  TextInput,
+  useTheme
+} from 'react-native-paper';
+import {
   Accessibility,
-  ArrowLeft,
   LocateFixed,
   RefreshCw,
   Settings
 } from 'lucide-react-native';
-import {
-  ActivityIndicator,
-  Alert,
-  Animated,
-  BackHandler,
-  Dimensions,
-  KeyboardAvoidingView,
-  PanResponder,
-  Platform,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StatusBar as NativeStatusBar,
-  StyleSheet,
-  Text,
-  TextInput,
-  useColorScheme,
-  View
-} from 'react-native';
 
 import { LeafletMap } from './src/components/LeafletMap';
 import { singaporeCenter, toCoordinate } from './src/lib/geo';
@@ -40,6 +48,7 @@ import {
   fetchBusStops,
   minutesUntilArrival
 } from './src/lib/lta';
+import { lightTheme, darkTheme, type AppTheme } from './src/theme';
 
 const ACCOUNT_KEY_STORAGE = 'lta.accountKey';
 const BUS_STOPS_STORAGE = 'lta.busStops';
@@ -49,7 +58,6 @@ const ARRIVAL_REFRESH_MS = 20000;
 
 type LoadState = 'idle' | 'loading' | 'error';
 type ThemeChoice = 'system' | 'light' | 'dark';
-type DrawerSnap = 'peek' | 'half' | 'full';
 type MapBounds = {
   north: number;
   south: number;
@@ -61,61 +69,38 @@ type Coordinate = {
   latitude: number;
   longitude: number;
 };
-type ThemeColors = {
-  bg: string;
-  bg2: string;
-  ui: string;
-  ui2: string;
-  tx: string;
-  tx2: string;
-  tx3: string;
-  accent: string;
-  accent2: string;
-  red: string;
-  yellow: string;
-  overlay: string;
-  status: 'light' | 'dark';
-};
-
-const flexoki: Record<'light' | 'dark', ThemeColors> = {
-  light: {
-    bg: '#FFFCF0',
-    bg2: '#F2F0E5',
-    ui: '#E6E4D9',
-    ui2: '#DAD8CE',
-    tx: '#100F0F',
-    tx2: '#6F6E69',
-    tx3: '#B7B5AC',
-    accent: '#24837B',
-    accent2: '#205EA6',
-    red: '#AF3029',
-    yellow: '#AD8301',
-    overlay: 'rgba(16, 15, 15, 0.35)',
-    status: 'dark'
-  },
-  dark: {
-    bg: '#100F0F',
-    bg2: '#1C1B1A',
-    ui: '#282726',
-    ui2: '#403E3C',
-    tx: '#CECDC3',
-    tx2: '#878580',
-    tx3: '#575653',
-    accent: '#3AA99F',
-    accent2: '#4385BE',
-    red: '#D14D41',
-    yellow: '#D0A215',
-    overlay: 'rgba(16, 15, 15, 0.62)',
-    status: 'light'
-  }
-};
 
 export default function App() {
   const systemScheme = useColorScheme();
   const [themeChoice, setThemeChoice] = useState<ThemeChoice>('system');
   const isDark = themeChoice === 'dark' || (themeChoice === 'system' && systemScheme === 'dark');
-  const colors = isDark ? flexoki.dark : flexoki.light;
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const paperTheme = isDark ? darkTheme : lightTheme;
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <PaperProvider theme={paperTheme}>
+        <AppContent
+          isDark={isDark}
+          themeChoice={themeChoice}
+          onThemeChange={setThemeChoice}
+        />
+      </PaperProvider>
+    </GestureHandlerRootView>
+  );
+}
+
+function AppContent({
+  isDark,
+  themeChoice,
+  onThemeChange
+}: {
+  isDark: boolean;
+  themeChoice: ThemeChoice;
+  onThemeChange: (choice: ThemeChoice) => void;
+}) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
 
   const [accountKey, setAccountKey] = useState('');
   const [draftKey, setDraftKey] = useState('');
@@ -126,103 +111,25 @@ export default function App() {
   const [arrivals, setArrivals] = useState<BusArrivalResponse | null>(null);
   const [busStopState, setBusStopState] = useState<LoadState>('idle');
   const [arrivalState, setArrivalState] = useState<LoadState>('idle');
-  const [locationState, setLocationState] = useState<LoadState>('idle');
+  const [, setLocationState] = useState<LoadState>('idle');
   const [query, setQuery] = useState('');
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
   const [locationFocusRequest, setLocationFocusRequest] = useState(0);
   const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [drawerSnap, setDrawerSnap] = useState<DrawerSnap>('half');
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const bottomSheetRef = useRef<BottomSheet>(null);
   const screenHeight = Dimensions.get('window').height;
   const topInset = Platform.OS === 'android' ? NativeStatusBar.currentHeight ?? 0 : 0;
-  const drawerHeights = useMemo(
-    () => {
-      const middleHeight = Math.max(390, screenHeight * 0.56);
+  const topBarHeight = topInset + 76;
+  const searchTop = topBarHeight + 10;
+  const mapTopInset = searchTop + 66;
 
-      return {
-        peek: Math.max(170, screenHeight * 0.22),
-        half: middleHeight,
-        full: middleHeight
-      };
-    },
-    [screenHeight]
-  );
-  const drawerTranslateY = useRef(new Animated.Value(drawerHeights.full - drawerHeights.half)).current;
-  const currentDrawerTranslateY = useRef(drawerHeights.full - drawerHeights.half);
-  const gestureStartTranslateY = useRef(drawerHeights.full - drawerHeights.half);
-  const drawerScrollY = useRef(0);
-
-  useEffect(() => {
-    const listener = drawerTranslateY.addListener(({ value }) => {
-      currentDrawerTranslateY.current = value;
-    });
-
-    return () => {
-      drawerTranslateY.removeListener(listener);
-    };
-  }, [drawerTranslateY]);
-
-  const animateDrawer = useCallback(
-    (snap: DrawerSnap) => {
-      setDrawerSnap(snap);
-      Animated.spring(drawerTranslateY, {
-        toValue: drawerHeights.full - drawerHeights[snap],
-        damping: 28,
-        stiffness: 260,
-        mass: 0.7,
-        overshootClamping: true,
-        useNativeDriver: true
-      }).start();
-    },
-    [drawerTranslateY, drawerHeights]
-  );
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          const isPullingSheetDown = drawerScrollY.current <= 8 && gesture.dy > 8;
-          const isOpeningPeekedSheet = drawerSnap === 'peek' && gesture.dy < -8;
-          return isPullingSheetDown || isOpeningPeekedSheet;
-        },
-        onMoveShouldSetPanResponderCapture: (_, gesture) => {
-          const isPullingSheetDown = drawerScrollY.current <= 8 && gesture.dy > 8;
-          const isOpeningSheet = drawerSnap !== 'full' && gesture.dy < -8;
-          return isPullingSheetDown || isOpeningSheet;
-        },
-        onPanResponderGrant: () => {
-          gestureStartTranslateY.current = currentDrawerTranslateY.current;
-          drawerTranslateY.stopAnimation();
-        },
-        onPanResponderMove: (_, gesture) => {
-          const maxTranslate = drawerHeights.full - drawerHeights.peek;
-          const nextTranslate = Math.min(maxTranslate, Math.max(0, gestureStartTranslateY.current + gesture.dy));
-          drawerTranslateY.setValue(nextTranslate);
-        },
-        onPanResponderRelease: (_, gesture) => {
-          const maxTranslate = drawerHeights.full - drawerHeights.peek;
-          if (gesture.dy < -24) {
-            animateDrawer('full');
-            return;
-          }
-          if (gesture.dy > 24 && drawerScrollY.current <= 8) {
-            animateDrawer('peek');
-            return;
-          }
-          const projectedTranslate = currentDrawerTranslateY.current + gesture.vy * 120;
-          animateDrawer(projectedTranslate > maxTranslate / 2 ? 'peek' : 'full');
-        }
-      }),
-    [animateDrawer, drawerTranslateY, drawerHeights]
-  );
-
-  useEffect(() => {
-    const nextTranslate = drawerHeights.full - drawerHeights[drawerSnap];
-    drawerTranslateY.setValue(nextTranslate);
-    currentDrawerTranslateY.current = nextTranslate;
-  }, [drawerTranslateY, drawerHeights, drawerSnap]);
+  const peekHeight = useMemo(() => Math.max(170, screenHeight * 0.22), [screenHeight]);
+  const openHeight = useMemo(() => Math.max(390, screenHeight * 0.56), [screenHeight]);
+  const snapPoints = useMemo(() => [peekHeight, openHeight], [peekHeight, openHeight]);
+  const [sheetIndex, setSheetIndex] = useState(1);
 
   useEffect(() => {
     void bootstrap();
@@ -245,7 +152,6 @@ export default function App() {
       }
       return false;
     });
-
     return () => subscription.remove();
   }, [showSearch, showSettings]);
 
@@ -257,7 +163,7 @@ export default function App() {
     ]);
 
     if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system') {
-      setThemeChoice(storedTheme);
+      onThemeChange(storedTheme);
     }
 
     if (storedKey) {
@@ -273,7 +179,7 @@ export default function App() {
         setBusStops(parsedStops);
         setSelectedStop(parsedStops[0] ?? null);
         if (parsedStops[0]) {
-          animateDrawer('full');
+          bottomSheetRef.current?.snapToIndex(1);
         }
       } catch {
         await AsyncStorage.removeItem(BUS_STOPS_STORAGE);
@@ -311,6 +217,8 @@ export default function App() {
       return coordinate;
     } catch (error) {
       if (options.alertOnError) {
+        // Use Alert from react-native
+        const { Alert } = require('react-native');
         Alert.alert('Could not get current location', error instanceof Error ? error.message : 'Unknown error');
       }
       return null;
@@ -324,13 +232,14 @@ export default function App() {
   const goToCurrentLocation = async () => {
     setSelectedStop(null);
     setQuery('');
-    animateDrawer('peek');
+    bottomSheetRef.current?.snapToIndex(0);
     if (userLocation) {
       setLocationFocusRequest((request) => request + 1);
     }
 
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
+      const { Alert } = require('react-native');
       Alert.alert('Location permission needed', 'Allow location access to jump to your current position.');
       return;
     }
@@ -372,6 +281,7 @@ export default function App() {
         setBusStopState('idle');
       } catch (error) {
         setBusStopState('error');
+        const { Alert } = require('react-native');
         Alert.alert('Could not load bus stops', error instanceof Error ? error.message : 'Unknown error');
       }
     },
@@ -391,6 +301,7 @@ export default function App() {
       setArrivalState('idle');
     } catch (error) {
       setArrivalState('error');
+      const { Alert } = require('react-native');
       Alert.alert('Could not load arrivals', error instanceof Error ? error.message : 'Unknown error');
     }
   }, [accountKey, selectedStop]);
@@ -420,7 +331,7 @@ export default function App() {
   };
 
   const setTheme = async (choice: ThemeChoice) => {
-    setThemeChoice(choice);
+    onThemeChange(choice);
     await AsyncStorage.setItem(THEME_STORAGE, choice);
   };
 
@@ -467,330 +378,582 @@ export default function App() {
     () => [...(arrivals?.Services ?? [])].sort((a, b) => a.ServiceNo.localeCompare(b.ServiceNo, undefined, { numeric: true })),
     [arrivals?.Services]
   );
+
   const mapCenter = selectedStop ? toCoordinate(selectedStop) : userLocation ?? singaporeCenter;
+  const bottomInset = sheetIndex === 0 ? peekHeight : openHeight;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style={colors.status} backgroundColor={colors.bg} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.app}>
-        <View style={[styles.topBar, { paddingTop: topInset + 8 }]}>
-          <View style={styles.titleBlock}>
-            <Text style={styles.title}>SG Bus Timings</Text>
-            <Text numberOfLines={1} style={styles.subtitle}>
-              {busStops.length > 0 ? `${busStops.length.toLocaleString()} stops cached` : 'Add LTA key in settings'}
-            </Text>
-          </View>
-          <Pressable accessibilityRole="button" style={styles.settingsButton} onPress={() => setShowSettings(true)}>
-            <Settings color={colors.tx} size={20} strokeWidth={2.2} />
-          </Pressable>
-        </View>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} />
 
+      {/* Top App Bar */}
+      <View
+        style={[
+          styles.absoluteTop,
+          {
+            height: topBarHeight,
+            paddingTop: topInset + 10,
+            backgroundColor: colors.elevation.level2,
+            zIndex: 20,
+          },
+        ]}
+      >
+        <View style={styles.titleBlock}>
+          <Text
+            variant="titleLarge"
+            numberOfLines={1}
+            style={{ color: colors.onSurface, fontWeight: '800', lineHeight: 28 }}
+          >
+            SG Bus Timings
+          </Text>
+          <Text
+            variant="bodySmall"
+            numberOfLines={1}
+            style={{ color: colors.onSurfaceVariant, marginTop: 2, lineHeight: 18 }}
+          >
+            {busStops.length > 0 ? `${busStops.length.toLocaleString()} stops cached` : 'Add LTA key in settings'}
+          </Text>
+        </View>
         <Pressable
           accessibilityRole="button"
-          style={[styles.searchWrap, { top: topInset + 88 }]}
-          onPress={() => setShowSearch(true)}
-        >
-          <Text style={[styles.searchInput, !selectedStop && styles.searchPlaceholder]} numberOfLines={1}>
-            {selectedStop ? `${selectedStop.BusStopCode} · ${selectedStop.Description}` : 'Search stops'}
-          </Text>
-        </Pressable>
-
-        <LeafletMap
-          center={mapCenter}
-          selectedStopCode={selectedStop?.BusStopCode}
-          stops={mapStops}
-          theme={isDark ? 'dark' : 'light'}
-          locationFocusRequest={locationFocusRequest}
-          bottomInset={drawerHeights.full}
-          topInset={topInset + 148}
-          userLocation={userLocation}
-          onBoundsChanged={setMapBounds}
-          onStopSelected={(code) => {
-            const stop = busStops.find((candidate) => candidate.BusStopCode === code);
-            if (stop) {
-              setSelectedStop(stop);
-              animateDrawer('full');
-            }
-          }}
-        />
-
-        <Animated.View
-          style={[
-            styles.locationButtonWrap,
+          accessibilityLabel="Open settings"
+          onPress={() => setShowSettings(true)}
+          style={({ pressed }) => [
+            styles.iconButton,
             {
-              bottom: drawerHeights.full + 16,
-              transform: [{ translateY: drawerTranslateY }]
-            }
+              backgroundColor: pressed ? colors.elevation.level4 : colors.elevation.level3,
+              borderRadius: e.radius.medium,
+              borderColor: colors.outlineVariant,
+            },
           ]}
         >
-          <Pressable
-            accessibilityLabel="Go to current location"
-            accessibilityRole="button"
-            style={styles.locationButton}
-            onPress={() => {
-              void goToCurrentLocation();
-            }}
-          >
-            {locationState === 'loading' ? (
-              <ActivityIndicator color={colors.tx} />
-            ) : (
-              <LocateFixed color={colors.tx} size={18} strokeWidth={2.2} />
-            )}
-          </Pressable>
-        </Animated.View>
+          <Settings color={colors.onSurface} size={21} strokeWidth={2.2} />
+        </Pressable>
+      </View>
 
-        <Animated.View
-          {...panResponder.panHandlers}
-          style={[styles.drawer, { height: drawerHeights.full, transform: [{ translateY: drawerTranslateY }] }]}
-        >
-          <View {...panResponder.panHandlers} style={styles.drawerHandleArea}>
-            <View style={styles.drawerHandle} />
-          </View>
+      {/* Search Bar */}
+      <Surface
+        style={[
+          styles.searchSurface,
+          {
+            top: searchTop,
+            backgroundColor: colors.surface,
+            borderRadius: e.radius.large,
+            zIndex: 30,
+          },
+        ]}
+        elevation={2}
+      >
+        <Searchbar
+          placeholder="Search stops"
+          onFocus={() => setShowSearch(true)}
+          value={selectedStop ? `${selectedStop.BusStopCode} · ${selectedStop.Description}` : ''}
+          style={{ backgroundColor: colors.surface, borderRadius: e.radius.large }}
+          inputStyle={{ color: colors.onSurface }}
+          iconColor={colors.onSurfaceVariant}
+          placeholderTextColor={colors.onSurfaceVariant}
+        />
+      </Surface>
+
+      {/* Map */}
+      <LeafletMap
+        center={mapCenter}
+        selectedStopCode={selectedStop?.BusStopCode}
+        stops={mapStops}
+        theme={isDark ? 'dark' : 'light'}
+        locationFocusRequest={locationFocusRequest}
+        bottomInset={bottomInset}
+        topInset={mapTopInset}
+        userLocation={userLocation}
+        onBoundsChanged={setMapBounds}
+        onStopSelected={(code) => {
+          const stop = busStops.find((candidate) => candidate.BusStopCode === code);
+          if (stop) {
+            setSelectedStop(stop);
+            bottomSheetRef.current?.snapToIndex(1);
+          }
+        }}
+      />
+
+      {/* Location Button */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Go to current location"
+        style={({ pressed }) => [
+          styles.fab,
+          {
+            bottom: bottomInset + 16,
+            backgroundColor: pressed ? colors.primary : colors.primaryContainer,
+            borderRadius: e.radius.medium,
+            borderColor: colors.outlineVariant,
+          },
+        ]}
+        onPress={() => {
+          void goToCurrentLocation();
+        }}
+      >
+        <LocateFixed
+          color={colors.onPrimaryContainer}
+          size={21}
+          strokeWidth={2.3}
+        />
+      </Pressable>
+
+      {/* Bottom Sheet */}
+      <BottomSheet
+        ref={bottomSheetRef}
+        index={1}
+        snapPoints={snapPoints}
+        onChange={setSheetIndex}
+        backgroundStyle={{
+          backgroundColor: colors.surface,
+        }}
+        handleStyle={{
+          backgroundColor: colors.surface,
+          borderTopLeftRadius: e.radius.extraLarge,
+          borderTopRightRadius: e.radius.extraLarge,
+        }}
+        handleIndicatorStyle={{
+          backgroundColor: colors.outlineVariant,
+          width: 48,
+          height: 5,
+          borderRadius: 8,
+        }}
+      >
+        <BottomSheetScrollView contentContainerStyle={{ paddingBottom: e.spacing.xl }}>
           {selectedStop ? (
-            <ScrollView
-              {...panResponder.panHandlers}
-              contentContainerStyle={styles.drawerScrollContent}
-              onScroll={(event) => {
-                drawerScrollY.current = event.nativeEvent.contentOffset.y;
-              }}
-              onScrollBeginDrag={() => {
-                if (drawerSnap === 'peek') {
-                  animateDrawer('full');
-                }
-              }}
-              scrollEventThrottle={16}
-              scrollEnabled={drawerSnap === 'full'}
-              showsVerticalScrollIndicator
-            >
-              <View style={styles.drawerStickyHeader}>
-                <View style={styles.stopHeader}>
-                  <View style={styles.stopTitleBlock}>
-                    <Text style={styles.stopCode}>{selectedStop.BusStopCode}</Text>
-                    <Text numberOfLines={2} style={styles.stopName}>
+            <>
+              <View style={{ paddingHorizontal: e.spacing.lg, paddingTop: e.spacing.sm }}>
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    justifyContent: 'space-between',
+                    alignItems: 'flex-start',
+                    gap: e.spacing.md,
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      variant="labelLarge"
+                      style={{ color: colors.primary, fontWeight: '900' }}
+                    >
+                      {selectedStop.BusStopCode}
+                    </Text>
+	                    <Text
+	                      variant="headlineSmall"
+	                      numberOfLines={2}
+	                      style={{ color: colors.onSurface, fontWeight: '900', lineHeight: 30, marginTop: 2 }}
+	                    >
                       {selectedStop.Description}
                     </Text>
-                    <Text numberOfLines={1} style={styles.stopRoad}>
+                    <Text
+                      variant="bodyMedium"
+                      style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
+                    >
                       {selectedStop.RoadName}
                     </Text>
                   </View>
-                  <Pressable accessibilityRole="button" style={styles.refreshButton} onPress={loadArrivals}>
-                    {arrivalState === 'loading' ? <ActivityIndicator color={colors.tx} /> : <RefreshCw color={colors.tx} size={20} strokeWidth={2.2} />}
-                  </Pressable>
+                  <IconButton
+                    icon={() =>
+                      arrivalState === 'loading' ? (
+                        <ActivityIndicator color={colors.onSurface} size={18} />
+                      ) : (
+                        <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
+                      )
+                    }
+                    mode="outlined"
+                    onPress={loadArrivals}
+                  />
                 </View>
-                <Text style={styles.updatedText}>{lastUpdated ? `Updated ${lastUpdated}` : 'Refreshes every 20 seconds'}</Text>
+                <Text
+                  variant="bodySmall"
+                  style={{
+                    color: colors.onSurfaceVariant,
+                    marginTop: e.spacing.md,
+                    marginBottom: e.spacing.sm,
+                  }}
+                >
+                  {lastUpdated ? `Updated ${lastUpdated}` : 'Refreshes every 20 seconds'}
+                </Text>
               </View>
+              <Divider />
               {selectedServices.length === 0 ? (
-                <Text style={styles.emptyText}>No arrivals returned for this stop right now.</Text>
+                <Text
+                  variant="bodyMedium"
+                  style={{
+                    color: colors.onSurfaceVariant,
+                    textAlign: 'center',
+                    marginTop: e.spacing.xl,
+                  }}
+                >
+                  No arrivals returned for this stop right now.
+                </Text>
               ) : (
                 selectedServices.map((service) => (
-                  <ArrivalRow key={service.ServiceNo} colors={colors} service={service} styles={styles} />
+                  <ArrivalRow key={service.ServiceNo} service={service} />
                 ))
               )}
-            </ScrollView>
+            </>
           ) : (
-            <View style={styles.emptyPanel}>
-              <Text style={styles.emptyTitle}>No stop selected</Text>
-              <Text style={styles.emptyText}>Search for a bus stop or tap a marker on the map.</Text>
+            <View style={{ alignItems: 'center', padding: e.spacing.xl, marginTop: e.spacing.md }}>
+              <Text
+                variant="titleMedium"
+                style={{ color: colors.onSurface, fontWeight: '900', marginBottom: e.spacing.sm }}
+              >
+                No stop selected
+              </Text>
+              <Text
+                variant="bodyMedium"
+                style={{ color: colors.onSurfaceVariant, textAlign: 'center' }}
+              >
+                Search for a bus stop or tap a marker on the map.
+              </Text>
             </View>
           )}
-        </Animated.View>
+        </BottomSheetScrollView>
+      </BottomSheet>
 
-        {showSettings && (
-          <View style={styles.settingsPage}>
-            <View style={[styles.settingsPageHeader, { paddingTop: topInset + 8 }]}>
-              <Pressable accessibilityRole="button" style={styles.closeButton} onPress={() => setShowSettings(false)}>
-                <ArrowLeft color={colors.tx} size={20} strokeWidth={2.2} />
-              </Pressable>
-              <Text style={styles.settingsPageTitle}>Settings</Text>
-              <View style={styles.headerSpacer} />
-            </View>
+      {/* Settings Overlay */}
+      {showSettings && (
+        <Surface
+          style={[styles.overlay, { backgroundColor: colors.background, zIndex: 200 }]}
+          elevation={0}
+        >
+          <Appbar.Header
+            style={{ backgroundColor: colors.elevation.level2, paddingTop: topInset + 4 }}
+            statusBarHeight={0}
+          >
+            <Appbar.BackAction onPress={() => setShowSettings(false)} />
+            <Appbar.Content title="Settings" titleStyle={{ fontWeight: '800' }} />
+          </Appbar.Header>
+          <ScrollView
+            contentContainerStyle={{
+              padding: e.spacing.lg,
+              paddingBottom: e.spacing.xxl,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Text
+              variant="labelLarge"
+              style={{ color: colors.onSurface, fontWeight: '900', marginBottom: e.spacing.sm }}
+            >
+              LTA DataMall AccountKey
+            </Text>
+            <TextInput
+              mode="outlined"
+              label="AccountKey"
+              placeholder="Paste AccountKey"
+              secureTextEntry
+              value={draftKey}
+              onChangeText={setDraftKey}
+              style={{ backgroundColor: colors.surface }}
+            />
+            <Button
+              mode="contained"
+              onPress={saveAccountKey}
+              style={{ marginTop: e.spacing.md, borderRadius: e.radius.medium }}
+            >
+              Save key
+            </Button>
 
-            <ScrollView contentContainerStyle={styles.settingsPageContent} keyboardShouldPersistTaps="handled">
-              <Text style={styles.fieldLabel}>LTA DataMall AccountKey</Text>
-              <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                placeholder="Paste AccountKey"
-                placeholderTextColor={colors.tx2}
-                secureTextEntry
-                style={styles.keyInput}
-                value={draftKey}
-                onChangeText={setDraftKey}
-              />
-              <Pressable accessibilityRole="button" style={styles.primaryButton} onPress={saveAccountKey}>
-                <Text style={styles.primaryButtonText}>Save key</Text>
-              </Pressable>
+            <Divider style={{ marginVertical: e.spacing.xl }} />
 
-              <View style={styles.settingsDivider} />
-              <Text style={styles.fieldLabel}>Bus stop cache</Text>
-              <Text style={styles.modalText}>
-                Sync downloads LTA bus stops for search and map markers. Arrival timings still refresh live from LTA.
-              </Text>
-              <Pressable
-                accessibilityRole="button"
-                disabled={busStopState === 'loading'}
-                style={[styles.secondaryWideButton, busStopState === 'loading' && styles.disabledButton]}
-                onPress={() => {
-                  void loadBusStops();
-                }}
-              >
-                {busStopState === 'loading' ? <ActivityIndicator color={colors.tx} /> : <Text style={styles.secondaryWideButtonText}>Sync bus stops</Text>}
-              </Pressable>
+            <Text
+              variant="labelLarge"
+              style={{ color: colors.onSurface, fontWeight: '900', marginBottom: e.spacing.sm }}
+            >
+              Bus stop cache
+            </Text>
+            <Text
+              variant="bodyMedium"
+              style={{
+                color: colors.onSurfaceVariant,
+                marginBottom: e.spacing.md,
+                lineHeight: 20,
+              }}
+            >
+              Sync downloads LTA bus stops for search and map markers. Arrival timings still
+              refresh live from LTA.
+            </Text>
+            <Button
+              mode="outlined"
+              onPress={() => {
+                void loadBusStops();
+              }}
+              disabled={busStopState === 'loading'}
+              style={{ borderRadius: e.radius.medium }}
+            >
+              {busStopState === 'loading' ? (
+                <ActivityIndicator color={colors.primary} size={18} />
+              ) : (
+                'Sync bus stops'
+              )}
+            </Button>
 
-              <View style={styles.settingsDivider} />
-              <Text style={styles.fieldLabel}>Theme</Text>
-              <View style={styles.segmented}>
-                {(['system', 'light', 'dark'] as ThemeChoice[]).map((choice) => (
-                  <Pressable
-                    key={choice}
-                    accessibilityRole="button"
-                    style={[styles.segmentButton, themeChoice === choice && styles.segmentButtonActive]}
-                    onPress={() => {
-                      void setTheme(choice);
-                    }}
-                  >
-                    <Text style={[styles.segmentText, themeChoice === choice && styles.segmentTextActive]}>
-                      {themeLabel(choice)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            </ScrollView>
-          </View>
-        )}
+            <Divider style={{ marginVertical: e.spacing.xl }} />
 
-        {showSearch && (
-          <View style={styles.searchPage}>
-            <View style={[styles.searchPageHeader, { paddingTop: topInset + 8 }]}>
-              <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                autoFocus
-                placeholder="Search stops"
-                placeholderTextColor={colors.tx2}
-                style={styles.searchPageInput}
-                value={query}
-                onChangeText={setQuery}
-              />
-            </View>
+            <Text
+              variant="labelLarge"
+              style={{ color: colors.onSurface, fontWeight: '900', marginBottom: e.spacing.sm }}
+            >
+              Theme
+            </Text>
+            <SegmentedButtons
+              value={themeChoice}
+              onValueChange={(value) => {
+                void setTheme(value as ThemeChoice);
+              }}
+              buttons={[
+                { value: 'system', label: 'System' },
+                { value: 'light', label: 'Light' },
+                { value: 'dark', label: 'Dark' },
+              ]}
+            />
+          </ScrollView>
+        </Surface>
+      )}
 
-            <ScrollView contentContainerStyle={styles.searchPageContent} keyboardShouldPersistTaps="handled">
-              {query.trim() ? (
-                searchResults.length > 0 ? (
-                  searchResults.map((stop) => (
-                    <Pressable
-                      key={stop.BusStopCode}
-                      accessibilityRole="button"
-                      style={styles.searchResultRow}
-                      onPress={() => {
-                        setSelectedStop(stop);
-                        setQuery('');
-                        setShowSearch(false);
-                        animateDrawer('full');
-                      }}
-                    >
-                      <Text style={styles.resultCode}>{stop.BusStopCode}</Text>
-                      <View style={styles.resultTextBlock}>
-                        <Text numberOfLines={1} style={styles.resultName}>
-                          {stop.Description}
-                        </Text>
-                        <Text numberOfLines={1} style={styles.resultRoad}>
-                          {stop.RoadName}
+      {/* Search Overlay */}
+      {showSearch && (
+        <Surface
+          style={[styles.overlay, { backgroundColor: colors.background, zIndex: 210 }]}
+          elevation={0}
+        >
+          <Appbar.Header
+            style={{
+              backgroundColor: colors.elevation.level2,
+              paddingTop: topInset + 4,
+            }}
+            statusBarHeight={0}
+          >
+            <Searchbar
+              placeholder="Search stops"
+              onChangeText={setQuery}
+              value={query}
+              autoFocus
+              style={{
+                flex: 1,
+                backgroundColor: colors.surface,
+                borderRadius: e.radius.large,
+              }}
+              inputStyle={{ color: colors.onSurface }}
+              iconColor={colors.onSurfaceVariant}
+              placeholderTextColor={colors.onSurfaceVariant}
+            />
+            <Appbar.Action
+              icon="close"
+              onPress={() => {
+                setShowSearch(false);
+                setQuery('');
+              }}
+            />
+          </Appbar.Header>
+          <ScrollView
+            contentContainerStyle={{
+              padding: e.spacing.lg,
+              paddingBottom: e.spacing.xxl,
+            }}
+            keyboardShouldPersistTaps="handled"
+          >
+            {query.trim() ? (
+              searchResults.length > 0 ? (
+                searchResults.map((stop) => (
+                  <List.Item
+                    key={stop.BusStopCode}
+                    title={stop.Description}
+                    description={`${stop.BusStopCode} · ${stop.RoadName}`}
+                    titleStyle={{ color: colors.onSurface, fontWeight: '800' }}
+                    descriptionStyle={{ color: colors.onSurfaceVariant }}
+                    left={() => (
+                      <View style={{ justifyContent: 'center', width: 56 }}>
+                        <Text
+                          variant="labelLarge"
+                          style={{ color: colors.primary, fontWeight: '900' }}
+                        >
+                          {stop.BusStopCode}
                         </Text>
                       </View>
-                    </Pressable>
-                  ))
-                ) : (
-                  <Text style={styles.emptyText}>No matching bus stops.</Text>
-                )
+                    )}
+                    onPress={() => {
+                      setSelectedStop(stop);
+                      setQuery('');
+                      setShowSearch(false);
+                      bottomSheetRef.current?.snapToIndex(1);
+                    }}
+                  />
+                ))
               ) : (
-                <Text style={styles.emptyText}>Search by stop code, road name, or landmark.</Text>
-              )}
-            </ScrollView>
-          </View>
-        )}
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+                <Text
+                  variant="bodyMedium"
+                  style={{
+                    color: colors.onSurfaceVariant,
+                    textAlign: 'center',
+                    marginTop: e.spacing.xl,
+                  }}
+                >
+                  No matching bus stops.
+                </Text>
+              )
+            ) : (
+              <Text
+                variant="bodyMedium"
+                style={{
+                  color: colors.onSurfaceVariant,
+                  textAlign: 'center',
+                  marginTop: e.spacing.xl,
+                }}
+              >
+                Search by stop code, road name, or landmark.
+              </Text>
+            )}
+          </ScrollView>
+        </Surface>
+      )}
+    </View>
   );
 }
 
-function ArrivalRow({
-  colors,
-  service,
-  styles
-}: {
-  colors: ThemeColors;
-  service: BusServiceArrival;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  const buses = [service.NextBus, service.NextBus2, service.NextBus3].filter((bus) => bus.EstimatedArrival);
+function ArrivalRow({ service }: { service: BusServiceArrival }) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
   const operator = operatorInfo(service.Operator);
+  const buses = [service.NextBus, service.NextBus2, service.NextBus3].filter(
+    (bus) => bus.EstimatedArrival
+  );
 
   return (
-    <View style={styles.arrivalRow}>
-      <View style={[styles.serviceBadge, { backgroundColor: operator.badge, borderColor: operator.accent }]}>
-        <Text style={[styles.serviceNo, { color: operator.text }]}>{service.ServiceNo}</Text>
-        <Text style={[styles.operator, { color: operator.mutedText }]}>{service.Operator}</Text>
+    <View
+      style={{
+        borderBottomColor: colors.outlineVariant,
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: e.spacing.md,
+        marginHorizontal: e.spacing.lg,
+        minHeight: 78,
+        paddingVertical: e.spacing.md,
+      }}
+    >
+      <View
+        style={{
+          alignItems: 'center',
+          justifyContent: 'center',
+          width: 72,
+        }}
+      >
+        <Surface
+          style={{
+            alignItems: 'center',
+            alignSelf: 'stretch',
+            borderRadius: e.radius.medium,
+            backgroundColor: operator.badge,
+            borderColor: operator.accent,
+            borderWidth: StyleSheet.hairlineWidth,
+            justifyContent: 'center',
+            minHeight: 54,
+            paddingHorizontal: e.spacing.xs,
+          }}
+          elevation={0}
+        >
+          <Text
+            variant="titleMedium"
+            numberOfLines={1}
+            adjustsFontSizeToFit
+            style={{ color: operator.text, fontWeight: '900', lineHeight: 24 }}
+          >
+            {service.ServiceNo}
+          </Text>
+          <Text
+            variant="labelSmall"
+            numberOfLines={1}
+            style={{ color: operator.mutedText, fontWeight: '800', marginTop: 1 }}
+          >
+            {service.Operator}
+          </Text>
+        </Surface>
       </View>
-      <View style={styles.busTimes}>
+      <View style={{ flex: 1, minWidth: 0 }}>
         {buses.length === 0 ? (
-          <Text style={styles.emptyText}>No active arrival</Text>
+          <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant }}>
+            No active arrival
+          </Text>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.busTimesContent}>
+          <View style={{ flexDirection: 'row', gap: e.spacing.sm, flexWrap: 'wrap' }}>
             {buses.map((bus, index) => (
-              <BusTime key={`${service.ServiceNo}-${index}`} bus={bus} colors={colors} styles={styles} />
+              <BusTime key={`${service.ServiceNo}-${index}`} bus={bus} />
             ))}
-          </ScrollView>
+          </View>
         )}
       </View>
     </View>
   );
 }
 
-function BusTime({
-  bus,
-  colors,
-  styles
-}: {
-  bus: BusArrival;
-  colors: ThemeColors;
-  styles: ReturnType<typeof createStyles>;
-}) {
-  const minutes = minutesUntilArrival(bus.EstimatedArrival);
+function BusTime({ bus }: { bus: BusArrival }) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
+  const mins = minutesUntilArrival(bus.EstimatedArrival);
   const crowd = crowdInfo(bus.Load);
 
   return (
-    <View style={styles.busTimePill}>
-      <Text style={styles.busMinutes}>{minutes <= 0 ? 'Arr' : `${minutes}m`}</Text>
-      <View style={styles.busPillFooter}>
+    <Surface
+      style={{
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: e.radius.small,
+        backgroundColor: colors.elevation.level1,
+        borderColor: colors.outlineVariant,
+        borderWidth: StyleSheet.hairlineWidth,
+        height: 48,
+        minWidth: 58,
+        paddingHorizontal: e.spacing.sm,
+      }}
+      elevation={0}
+    >
+      <Text
+        variant="titleMedium"
+        numberOfLines={1}
+        style={{ color: colors.onSurface, fontWeight: '900', lineHeight: 22 }}
+      >
+        {mins <= 0 ? 'Arr' : `${mins}m`}
+      </Text>
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: e.spacing.xs,
+          marginTop: 3,
+          width: '100%',
+        }}
+      >
         <View
-          accessibilityLabel={crowd.label}
-          style={[
-            styles.crowdDensityPill,
-            { backgroundColor: crowd.color(colors) },
-            bus.Feature === 'WAB' && styles.crowdDensityPillWithWheelchair
-          ]}
+          style={{
+            flex: 1,
+            height: 6,
+            borderRadius: 3,
+            backgroundColor: crowd.color(colors),
+          }}
         />
         {bus.Feature === 'WAB' && (
-        <View style={styles.wheelchairIconWrap}>
-          <Accessibility color={colors.accent2} size={15} strokeWidth={2.4} />
-        </View>
+          <Accessibility color={colors.primary} size={14} strokeWidth={2.4} />
         )}
       </View>
-    </View>
+    </Surface>
   );
 }
 
 function crowdInfo(load: string) {
   switch (load) {
     case 'SEA':
-      return { label: 'Seats available', color: (colors: ThemeColors) => colors.accent };
+      return { label: 'Seats available', color: (c: AppTheme['colors']) => c.primary };
     case 'SDA':
-      return { label: 'Standing available', color: (colors: ThemeColors) => colors.yellow };
+      return { label: 'Standing available', color: (c: AppTheme['colors']) => c.secondary };
     case 'LSD':
-      return { label: 'Limited standing', color: (colors: ThemeColors) => colors.red };
+      return { label: 'Limited standing', color: (c: AppTheme['colors']) => c.error };
     default:
-      return { label: 'Crowd unknown', color: (colors: ThemeColors) => colors.tx3 };
+      return { label: 'Crowd unknown', color: (c: AppTheme['colors']) => c.outlineVariant };
   }
 }
 
@@ -839,465 +1002,49 @@ function operatorInfo(operator: string) {
   }
 }
 
-function themeLabel(choice: ThemeChoice) {
-  switch (choice) {
-    case 'system':
-      return 'System';
-    case 'light':
-      return 'Light';
-    case 'dark':
-      return 'Dark';
-  }
-}
-
-function createStyles(colors: ThemeColors) {
-  return StyleSheet.create({
-    safeArea: {
-      flex: 1,
-      backgroundColor: colors.bg
-    },
-    app: {
-      flex: 1,
-      backgroundColor: colors.bg
-    },
-    topBar: {
-      alignItems: 'center',
-      backgroundColor: colors.bg,
-      borderBottomColor: colors.ui,
-      borderBottomWidth: 1,
-      flexDirection: 'row',
-      gap: 12,
-      justifyContent: 'space-between',
-      left: 0,
-      paddingBottom: 12,
-      paddingHorizontal: 16,
-      position: 'absolute',
-      right: 0,
-      top: 0,
-      zIndex: 20
-    },
-    titleBlock: {
-      flex: 1,
-      minWidth: 0
-    },
-    title: {
-      color: colors.tx,
-      fontSize: 22,
-      fontWeight: '800'
-    },
-    subtitle: {
-      color: colors.tx2,
-      fontSize: 12,
-      marginTop: 2
-    },
-    settingsButton: {
-      alignItems: 'center',
-      backgroundColor: colors.ui,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      height: 40,
-      justifyContent: 'center',
-      paddingHorizontal: 12
-    },
-    settingsButtonText: {
-      color: colors.tx,
-      fontWeight: '800'
-    },
-    searchWrap: {
-      left: 16,
-      position: 'absolute',
-      right: 16,
-      zIndex: 30
-    },
-    searchInput: {
-      backgroundColor: colors.bg,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      color: colors.tx,
-      fontSize: 16,
-      height: 48,
-      paddingHorizontal: 14,
-      textAlignVertical: 'center'
-    },
-    searchPlaceholder: {
-      color: colors.tx2
-    },
-    searchResults: {
-      backgroundColor: colors.bg,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      marginTop: 8,
-      overflow: 'hidden'
-    },
-    searchPage: {
-      backgroundColor: colors.bg,
-      bottom: 0,
-      left: 0,
-      position: 'absolute',
-      right: 0,
-      top: 0,
-      zIndex: 110
-    },
-    searchPageHeader: {
-      alignItems: 'center',
-      borderBottomColor: colors.ui,
-      borderBottomWidth: 1,
-      flexDirection: 'row',
-      gap: 10,
-      paddingBottom: 12,
-      paddingHorizontal: 16
-    },
-    searchPageInput: {
-      backgroundColor: colors.bg2,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      color: colors.tx,
-      flex: 1,
-      fontSize: 16,
-      height: 44,
-      paddingHorizontal: 12
-    },
-    searchPageContent: {
-      paddingBottom: 40,
-      paddingHorizontal: 16,
-      paddingTop: 12
-    },
-    searchResultRow: {
-      alignItems: 'center',
-      borderBottomColor: colors.ui,
-      borderBottomWidth: 1,
-      flexDirection: 'row',
-      gap: 10,
-      padding: 12
-    },
-    resultCode: {
-      color: colors.accent,
-      fontSize: 15,
-      fontWeight: '900',
-      width: 56
-    },
-    resultTextBlock: {
-      flex: 1,
-      minWidth: 0
-    },
-    resultName: {
-      color: colors.tx,
-      fontWeight: '800'
-    },
-    resultRoad: {
-      color: colors.tx2,
-      fontSize: 12,
-      marginTop: 2
-    },
-    locationButtonWrap: {
-      left: 16,
-      position: 'absolute',
-      zIndex: 35
-    },
-    locationButton: {
-      alignItems: 'center',
-      backgroundColor: colors.bg,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      height: 42,
-      justifyContent: 'center',
-      width: 42
-    },
-    drawer: {
-      backgroundColor: colors.bg,
-      borderColor: colors.ui2,
-      borderTopLeftRadius: 8,
-      borderTopRightRadius: 8,
-      borderWidth: 1,
-      bottom: 0,
-      left: 0,
-      paddingBottom: 8,
-      paddingHorizontal: 16,
-      position: 'absolute',
-      right: 0,
-      zIndex: 40
-    },
-    drawerHandleArea: {
-      alignItems: 'center',
-      height: 30,
-      justifyContent: 'center'
-    },
-    drawerHandle: {
-      backgroundColor: colors.ui2,
-      borderRadius: 8,
-      height: 5,
-      width: 54
-    },
-    drawerScrollContent: {
-      paddingBottom: 28
-    },
-    drawerStickyHeader: {
-      backgroundColor: colors.bg,
-      paddingBottom: 2
-    },
-    stopHeader: {
-      alignItems: 'flex-start',
-      flexDirection: 'row',
-      gap: 12,
-      justifyContent: 'space-between'
-    },
-    stopTitleBlock: {
-      flex: 1,
-      minWidth: 0
-    },
-    stopCode: {
-      color: colors.accent,
-      fontSize: 14,
-      fontWeight: '900'
-    },
-    stopName: {
-      color: colors.tx,
-      fontSize: 20,
-      fontWeight: '900',
-      marginTop: 2
-    },
-    stopRoad: {
-      color: colors.tx2,
-      fontSize: 13,
-      marginTop: 2
-    },
-    refreshButton: {
-      alignItems: 'center',
-      backgroundColor: colors.ui,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      minHeight: 40,
-      justifyContent: 'center',
-      paddingHorizontal: 12
-    },
-    refreshButtonText: {
-      color: colors.tx,
-      fontWeight: '800'
-    },
-    updatedText: {
-      color: colors.tx2,
-      fontSize: 12,
-      marginBottom: 8,
-      marginTop: 8
-    },
-    arrivalRow: {
-      alignItems: 'center',
-      borderTopColor: colors.ui,
-      borderTopWidth: 1,
-      flexDirection: 'row',
-      gap: 10,
-      paddingVertical: 12
-    },
-    serviceBadge: {
-      alignItems: 'center',
-      borderWidth: 1,
-      borderRadius: 8,
-      minHeight: 56,
-      justifyContent: 'center',
-      width: 76
-    },
-    serviceNo: {
-      fontSize: 18,
-      fontWeight: '900'
-    },
-    operator: {
-      fontSize: 10,
-      fontWeight: '800',
-      marginTop: 2
-    },
-    busTimes: {
-      flex: 1,
-      minWidth: 0
-    },
-    busTimesContent: {
-      gap: 8,
-      paddingRight: 8
-    },
-    busTimePill: {
-      alignItems: 'center',
-      backgroundColor: colors.bg2,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      height: 56,
-      justifyContent: 'center',
-      paddingBottom: 16,
-      paddingHorizontal: 8,
-      paddingTop: 6,
-      width: 76
-    },
-    busMinutes: {
-      color: colors.tx,
-      fontSize: 18,
-      fontWeight: '900',
-      textAlign: 'center'
-    },
-    busPillFooter: {
-      alignItems: 'center',
-      bottom: 6,
-      flexDirection: 'row',
-      gap: 4,
-      left: 8,
-      position: 'absolute',
-      right: 6
-    },
-    crowdDensityPill: {
-      borderRadius: 8,
-      flex: 1,
-      height: 7
-    },
-    crowdDensityPillWithWheelchair: {
-      marginRight: 1
-    },
-    wheelchairIconWrap: {
-      alignItems: 'center',
-      height: 15,
-      justifyContent: 'center',
-      width: 15
-    },
-    emptyPanel: {
-      alignItems: 'center',
-      flex: 1,
-      justifyContent: 'flex-start',
-      padding: 20,
-      paddingTop: 16
-    },
-    emptyTitle: {
-      color: colors.tx,
-      fontSize: 18,
-      fontWeight: '900',
-      marginBottom: 6
-    },
-    emptyText: {
-      color: colors.tx2,
-      fontSize: 13,
-      textAlign: 'center'
-    },
-    settingsPage: {
-      backgroundColor: colors.bg,
-      bottom: 0,
-      left: 0,
-      position: 'absolute',
-      right: 0,
-      top: 0,
-      zIndex: 100
-    },
-    settingsPageHeader: {
-      alignItems: 'center',
-      borderBottomColor: colors.ui,
-      borderBottomWidth: 1,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      paddingBottom: 12,
-      paddingHorizontal: 16
-    },
-    settingsPageTitle: {
-      color: colors.tx,
-      fontSize: 18,
-      fontWeight: '900'
-    },
-    headerSpacer: {
-      width: 58
-    },
-    settingsPageContent: {
-      padding: 20,
-      paddingBottom: 40
-    },
-    closeButton: {
-      alignItems: 'center',
-      backgroundColor: colors.ui,
-      borderRadius: 8,
-      minHeight: 38,
-      justifyContent: 'center',
-      paddingHorizontal: 12
-    },
-    closeButtonText: {
-      color: colors.tx,
-      fontWeight: '800'
-    },
-    fieldLabel: {
-      color: colors.tx,
-      fontSize: 14,
-      fontWeight: '900',
-      marginBottom: 8
-    },
-    modalText: {
-      color: colors.tx2,
-      fontSize: 14,
-      lineHeight: 20,
-      marginBottom: 12
-    },
-    keyInput: {
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      color: colors.tx,
-      fontSize: 15,
-      height: 48,
-      paddingHorizontal: 12
-    },
-    primaryButton: {
-      alignItems: 'center',
-      backgroundColor: colors.accent,
-      borderRadius: 8,
-      height: 44,
-      justifyContent: 'center',
-      marginTop: 12
-    },
-    primaryButtonText: {
-      color: colors.bg,
-      fontWeight: '900'
-    },
-    secondaryWideButton: {
-      alignItems: 'center',
-      backgroundColor: colors.ui,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      height: 44,
-      justifyContent: 'center'
-    },
-    secondaryWideButtonText: {
-      color: colors.tx,
-      fontWeight: '900'
-    },
-    disabledButton: {
-      opacity: 0.65
-    },
-    settingsDivider: {
-      backgroundColor: colors.ui,
-      height: 1,
-      marginVertical: 18
-    },
-    segmented: {
-      backgroundColor: colors.bg2,
-      borderColor: colors.ui2,
-      borderRadius: 8,
-      borderWidth: 1,
-      flexDirection: 'row',
-      overflow: 'hidden'
-    },
-    segmentButton: {
-      alignItems: 'center',
-      flex: 1,
-      justifyContent: 'center',
-      minHeight: 42
-    },
-    segmentButtonActive: {
-      backgroundColor: colors.accent
-    },
-    segmentText: {
-      color: colors.tx2,
-      fontWeight: '800'
-    },
-    segmentTextActive: {
-      color: colors.bg
-    }
-  });
-}
+const styles = StyleSheet.create({
+  absoluteTop: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    left: 0,
+    paddingHorizontal: 16,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+  titleBlock: {
+    flex: 1,
+    minWidth: 0,
+    paddingLeft: 8,
+  },
+  searchSurface: {
+    left: 16,
+    position: 'absolute',
+    right: 16,
+  },
+  iconButton: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+  },
+  fab: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 48,
+    justifyContent: 'center',
+    left: 16,
+    position: 'absolute',
+    width: 48,
+    zIndex: 35,
+  },
+  overlay: {
+    bottom: 0,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+  },
+});

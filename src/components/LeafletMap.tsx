@@ -116,14 +116,14 @@ function buildMapHtml() {
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     html, body, #map { height: 100%; margin: 0; padding: 0; }
-    body { background: #F2F0E5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { background: #f9faf5; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
     .bus-marker {
       align-items: center;
       background: #ffffff;
-      border: 2px solid #0b6b57;
+      border: 2px solid #005f4b;
       border-radius: 16px;
       box-shadow: 0 2px 8px rgba(16, 24, 40, 0.28);
-      color: #0b6b57;
+      color: #005f4b;
       display: flex;
       font-size: 10px;
       font-weight: 800;
@@ -132,12 +132,12 @@ function buildMapHtml() {
       width: 42px;
     }
     .bus-marker.selected {
-      background: #14213d;
-      border-color: #14213d;
+      background: #005f4b;
+      border-color: #005f4b;
       color: #ffffff;
     }
     .user-marker {
-      background: #2563eb;
+      background: #00639c;
       border: 3px solid #ffffff;
       border-radius: 50%;
       box-shadow: 0 2px 8px rgba(16, 24, 40, 0.3);
@@ -145,8 +145,8 @@ function buildMapHtml() {
       width: 18px;
     }
     .leaflet-popup-content { margin: 10px 12px; }
-    .popup-title { color: #101828; font-weight: 800; margin-bottom: 2px; }
-    .popup-meta { color: #667085; font-size: 12px; }
+    .popup-title { color: #1a1c1a; font-weight: 800; margin-bottom: 2px; }
+    .popup-meta { color: #414942; font-size: 12px; }
     .dark-tiles { filter: brightness(0.72) contrast(1.08) saturate(0.78); }
   </style>
 </head>
@@ -206,7 +206,7 @@ function buildMapHtml() {
       const center = payload.center;
       markerLayer.clearLayers();
       const isDark = payload.theme === 'dark';
-      document.body.style.background = isDark ? '#100F0F' : '#F2F0E5';
+      document.body.style.background = isDark ? '#111412' : '#f9faf5';
       const tileContainer = tileLayer.getContainer();
       if (tileContainer) {
         tileContainer.classList.toggle('dark-tiles', isDark);
@@ -238,9 +238,14 @@ function buildMapHtml() {
 
       (payload.stops || []).forEach((stop) => {
         const isSelected = stop.BusStopCode === payload.selectedStopCode;
+        const darkStyle = isDark
+          ? (isSelected
+              ? 'background:#49d9af;color:#003828;border-color:#49d9af;'
+              : 'background:#1a1c1a;color:#49d9af;border-color:#49d9af;')
+          : '';
         const icon = L.divIcon({
           className: '',
-          html: '<div class="bus-marker ' + (isSelected ? 'selected' : '') + '" style="' + (isDark && !isSelected ? 'background:#1C1B1A;color:#3AA99F;border-color:#3AA99F;' : '') + '">' + stop.BusStopCode + '</div>',
+          html: '<div class="bus-marker ' + (isSelected ? 'selected' : '') + '" style="' + darkStyle + '">' + stop.BusStopCode + '</div>',
           iconSize: [42, 28],
           iconAnchor: [21, 14]
         });
