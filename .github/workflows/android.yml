@@ -21,15 +21,6 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: "17"
-          distribution: temurin
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Install dependencies
         run: npm ci
 
@@ -38,6 +29,15 @@ jobs:
 
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
 
       - name: Build release APK
         run: |
