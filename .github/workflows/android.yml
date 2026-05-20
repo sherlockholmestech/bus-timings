@@ -1,10 +1,6 @@
 name: Android CI
 
 on:
-  push:
-    branches: ["master"]
-  pull_request:
-    branches: ["master"]
   release:
     types: [published]
 
@@ -30,7 +26,6 @@ jobs:
         with:
           java-version: "17"
           distribution: temurin
-          cache: gradle
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
