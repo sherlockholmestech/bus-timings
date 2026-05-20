@@ -7,6 +7,8 @@ import { BusStop } from '../lib/lta';
 
 type LeafletMapProps = {
   center: Coordinate;
+  routeLines: Coordinate[][];
+  routeServiceNo: string | null;
   selectedStopCode?: string;
   stops: BusStop[];
   theme: 'light' | 'dark';
@@ -20,6 +22,8 @@ type LeafletMapProps = {
 
 export function LeafletMap({
   center,
+  routeLines,
+  routeServiceNo,
   selectedStopCode,
   stops,
   theme,
@@ -36,6 +40,8 @@ export function LeafletMap({
   const payload = useMemo(
     () => ({
       center,
+      routeLines,
+      routeServiceNo,
       selectedStopCode,
       stops,
       theme,
@@ -44,7 +50,7 @@ export function LeafletMap({
       topInset,
       userLocation
     }),
-    [center, selectedStopCode, stops, theme, locationFocusRequest, bottomInset, topInset, userLocation]
+    [center, routeLines, routeServiceNo, selectedStopCode, stops, theme, locationFocusRequest, bottomInset, topInset, userLocation]
   );
 
   const onMessage = (event: WebViewMessageEvent) => {
@@ -158,12 +164,16 @@ function buildMapHtml() {
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
+      detectRetina: true,
+      updateWhenIdle: true,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
     let markerLayer = L.layerGroup().addTo(map);
+    let routeLayer = L.layerGroup().addTo(map);
     let userMarker = null;
-    let lastSelected = null;
+    let lastSelectedFocusKey = null;
+    let lastRouteServiceNo = null;
     let lastLocationFocusRequest = 0;
     let boundsTimer = null;
 
@@ -204,7 +214,9 @@ function buildMapHtml() {
     const render = (payload) => {
       if (!payload || !payload.center) return;
       const center = payload.center;
+      map.invalidateSize(false);
       markerLayer.clearLayers();
+      routeLayer.clearLayers();
       const isDark = payload.theme === 'dark';
       document.body.style.background = isDark ? '#111412' : '#f9faf5';
       const tileContainer = tileLayer.getContainer();
@@ -212,7 +224,44 @@ function buildMapHtml() {
         tileContainer.classList.toggle('dark-tiles', isDark);
       }
 
-      if (payload.selectedStopCode && lastSelected !== payload.selectedStopCode) {
+      const routeLines = (payload.routeLines || []).filter((line) => line.length > 1);
+      routeLines.forEach((line) => {
+        L.polyline(
+          line.map((point) => [point.latitude, point.longitude]),
+          {
+            color: isDark ? '#D0A215' : '#205EA6',
+            opacity: 0.58,
+            weight: 3,
+            dashArray: '8 10',
+            lineCap: 'round',
+            lineJoin: 'round'
+          }
+        ).addTo(routeLayer);
+      });
+
+      if (payload.routeServiceNo && payload.routeServiceNo !== lastRouteServiceNo && routeLines.length > 0) {
+        const bounds = L.latLngBounds(routeLines.flat().map((point) => [point.latitude, point.longitude]));
+        map.fitBounds(bounds, {
+          paddingTopLeft: [32, Math.max(32, (payload.topInset || 0) + 24)],
+          paddingBottomRight: [32, Math.max(32, (payload.bottomInset || 0) + 24)],
+          maxZoom: 16
+        });
+        lastRouteServiceNo = payload.routeServiceNo;
+      } else if (!payload.routeServiceNo && lastRouteServiceNo) {
+        lastRouteServiceNo = null;
+      }
+
+      const selectedFocusKey = payload.selectedStopCode
+        ? [
+            payload.selectedStopCode,
+            center.latitude,
+            center.longitude,
+            payload.topInset || 0,
+            payload.bottomInset || 0
+          ].join(':')
+        : null;
+
+      if (!payload.routeServiceNo && payload.selectedStopCode && lastSelectedFocusKey !== selectedFocusKey) {
         if (payload.bottomInset) {
           const zoom = 16;
           const size = map.getSize();
@@ -226,9 +275,20 @@ function buildMapHtml() {
         } else {
           map.setView([center.latitude, center.longitude], 16);
         }
-        lastSelected = payload.selectedStopCode;
-      } else if (!payload.selectedStopCode && lastSelected) {
-        lastSelected = null;
+        lastSelectedFocusKey = selectedFocusKey;
+        setTimeout(() => {
+          map.invalidateSize(false);
+          const zoom = map.getZoom();
+          const size = map.getSize();
+          const visibleTop = Math.max(0, payload.topInset || 0);
+          const visibleBottom = Math.max(visibleTop + 120, size.y - (payload.bottomInset || 0));
+          const targetY = visibleTop + (visibleBottom - visibleTop) / 2;
+          const stopPoint = map.project([center.latitude, center.longitude], zoom);
+          const adjustedCenterPoint = L.point(stopPoint.x, stopPoint.y + size.y / 2 - targetY);
+          map.setView(map.unproject(adjustedCenterPoint, zoom), zoom, { animate: false });
+        }, 80);
+      } else if (!payload.selectedStopCode && lastSelectedFocusKey) {
+        lastSelectedFocusKey = null;
       }
 
       if (payload.userLocation && payload.locationFocusRequest && payload.locationFocusRequest !== lastLocationFocusRequest) {

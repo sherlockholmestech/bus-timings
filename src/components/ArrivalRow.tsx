@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Accessibility, Star } from 'lucide-react-native';
 import { IconButton, Text, useTheme } from 'react-native-paper';
 
@@ -9,10 +9,18 @@ import { AppTheme } from '../theme';
 type ArrivalRowProps = {
   service: BusServiceArrival;
   isFavorite?: boolean;
+  isRouteSelected?: boolean;
+  onSelectServiceRoute?: () => void;
   onToggleFavorite?: () => void;
 };
 
-export function ArrivalRow({ service, isFavorite = false, onToggleFavorite }: ArrivalRowProps) {
+export function ArrivalRow({
+  service,
+  isFavorite = false,
+  isRouteSelected = false,
+  onSelectServiceRoute,
+  onToggleFavorite
+}: ArrivalRowProps) {
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
   const e = theme.expressive;
@@ -41,12 +49,18 @@ export function ArrivalRow({ service, isFavorite = false, onToggleFavorite }: Ar
           width: 72,
         }}
       >
-        <View
+        <Pressable
+          accessibilityRole={onSelectServiceRoute ? 'button' : undefined}
+          accessibilityLabel={onSelectServiceRoute ? `Show route for service ${service.ServiceNo}` : undefined}
+          disabled={!onSelectServiceRoute}
+          onPress={onSelectServiceRoute}
           style={{
             alignItems: 'center',
             alignSelf: 'stretch',
-            borderLeftColor: operator.accent,
+            backgroundColor: isRouteSelected ? colors.elevation.level2 : 'transparent',
+            borderLeftColor: isRouteSelected ? colors.primary : operator.accent,
             borderLeftWidth: 4,
+            borderRadius: e.radius.small,
             justifyContent: 'center',
             minHeight: 54,
             paddingLeft: e.spacing.sm,
@@ -57,7 +71,7 @@ export function ArrivalRow({ service, isFavorite = false, onToggleFavorite }: Ar
             variant="titleMedium"
             numberOfLines={1}
             adjustsFontSizeToFit
-            style={{ color: colors.onSurface, fontWeight: '900', lineHeight: 24 }}
+            style={{ color: isRouteSelected ? colors.primary : colors.onSurface, fontWeight: '900', lineHeight: 24 }}
           >
             {service.ServiceNo}
           </Text>
@@ -68,7 +82,7 @@ export function ArrivalRow({ service, isFavorite = false, onToggleFavorite }: Ar
           >
             {service.Operator}
           </Text>
-        </View>
+        </Pressable>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         {buses.length === 0 ? (

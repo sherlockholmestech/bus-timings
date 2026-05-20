@@ -5,6 +5,7 @@ import {
   Appbar,
   Button,
   Divider,
+  ProgressBar,
   SegmentedButtons,
   Surface,
   Text,
@@ -18,6 +19,8 @@ import { LoadState, ThemeChoice } from '../types';
 type SettingsOverlayProps = {
   busStopState: LoadState;
   draftKey: string;
+  syncLabel: string | null;
+  syncProgress: number;
   themeChoice: ThemeChoice;
   topBarHeight: number;
   topInset: number;
@@ -31,6 +34,8 @@ type SettingsOverlayProps = {
 export function SettingsOverlay({
   busStopState,
   draftKey,
+  syncLabel,
+  syncProgress,
   themeChoice,
   topBarHeight,
   topInset,
@@ -106,8 +111,8 @@ export function SettingsOverlay({
             lineHeight: 20,
           }}
         >
-          Sync downloads LTA bus stops for search and map markers. Arrival timings still
-          refresh live from LTA.
+          Sync downloads LTA bus stops for search and map markers. Arrival timings and
+          route previews load live from LTA.
         </Text>
         <Button
           mode="outlined"
@@ -121,6 +126,21 @@ export function SettingsOverlay({
             'Sync bus stops'
           )}
         </Button>
+        {busStopState === 'loading' && (
+          <>
+            <ProgressBar
+              progress={syncProgress}
+              color={colors.primary}
+              style={{ marginTop: e.spacing.md, borderRadius: e.radius.small, height: 6 }}
+            />
+            <Text
+              variant="bodySmall"
+              style={{ color: colors.onSurfaceVariant, marginTop: e.spacing.sm }}
+            >
+              {syncLabel ?? 'Syncing...'}
+            </Text>
+          </>
+        )}
 
         <Divider style={{ marginVertical: e.spacing.xl }} />
 
