@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { SharedValue } from 'react-native-reanimated';
-import { RefreshCw, Star } from 'lucide-react-native';
+import { RefreshCw, X, Star } from 'lucide-react-native';
 import {
   ActivityIndicator,
   Divider,
@@ -12,6 +12,7 @@ import {
 } from 'react-native-paper';
 
 import { BusServiceArrival, BusStop } from '../lib/lta';
+import { ServiceRouteView } from '../lib/routeView';
 import { AppTheme } from '../theme';
 import { FavoriteService, LoadState } from '../types';
 import { ArrivalRow } from './ArrivalRow';
@@ -35,10 +36,15 @@ type ArrivalsDrawerProps = {
   favoriteItems: FavoriteArrivalItem[];
   favorites: FavoriteService[];
   lastUpdated: string | null;
+  routeState: LoadState;
+  routeView: ServiceRouteView;
   selectedServices: BusServiceArrival[];
   selectedStop: BusStop | null;
+  selectedRouteServiceNo: string | null;
   snapPoints: number[];
   onChange: (index: number) => void;
+  onCloseRoute: () => void;
+  onSelectServiceRoute: (serviceNo: string) => void;
   onSelectFavoriteStop: (busStopCode: string) => void;
   onToggleFavorite: (favorite: FavoriteService) => void;
   onRefresh: () => void;
@@ -52,10 +58,15 @@ export function ArrivalsDrawer({
   favoriteItems,
   favorites,
   lastUpdated,
+  routeState,
+  routeView,
   selectedServices,
   selectedStop,
+  selectedRouteServiceNo,
   snapPoints,
   onChange,
+  onCloseRoute,
+  onSelectServiceRoute,
   onSelectFavoriteStop,
   onToggleFavorite,
   onRefresh,
@@ -89,7 +100,15 @@ export function ArrivalsDrawer({
       }}
     >
       <BottomSheetScrollView contentContainerStyle={{ paddingBottom: e.spacing.xl }}>
-        {selectedStop ? (
+        {selectedRouteServiceNo ? (
+          <RouteView
+            routeState={routeState}
+            routeView={routeView}
+            serviceNo={selectedRouteServiceNo}
+            onCloseRoute={onCloseRoute}
+            onSelectFavoriteStop={onSelectFavoriteStop}
+          />
+        ) : selectedStop ? (
           <>
             <View style={{ paddingHorizontal: e.spacing.lg, paddingTop: e.spacing.sm }}>
               <View
@@ -161,6 +180,8 @@ export function ArrivalsDrawer({
                 <ArrivalRow
                   key={service.ServiceNo}
                   service={service}
+                  isRouteSelected={selectedRouteServiceNo === service.ServiceNo}
+                  onSelectServiceRoute={() => onSelectServiceRoute(service.ServiceNo)}
                   isFavorite={favorites.some(
                     (favorite) =>
                       favorite.busStopCode === selectedStop.BusStopCode &&
@@ -275,6 +296,8 @@ export function ArrivalsDrawer({
                   <ArrivalRow
                     key={`${item.busStopCode}:${item.serviceNo}`}
                     service={item.service}
+                    isRouteSelected={selectedRouteServiceNo === item.serviceNo}
+                    onSelectServiceRoute={() => onSelectServiceRoute(item.serviceNo)}
                     isFavorite
                     onToggleFavorite={() =>
                       onToggleFavorite({
@@ -291,6 +314,135 @@ export function ArrivalsDrawer({
         )}
       </BottomSheetScrollView>
     </BottomSheet>
+  );
+}
+
+function RouteView({
+  routeState,
+  routeView,
+  serviceNo,
+  onCloseRoute,
+  onSelectFavoriteStop,
+}: {
+  routeState: LoadState;
+  routeView: ServiceRouteView;
+  serviceNo: string;
+  onCloseRoute: () => void;
+  onSelectFavoriteStop: (busStopCode: string) => void;
+}) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
+
+  return (
+    <>
+      <View style={{ paddingHorizontal: e.spacing.lg, paddingTop: e.spacing.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: e.spacing.md }}>
+          <View style={{ flex: 1 }}>
+            <Text
+              variant="labelLarge"
+              style={{ color: colors.primary, fontWeight: '900' }}
+            >
+              Service {serviceNo}
+            </Text>
+            <Text
+              variant="headlineSmall"
+              style={{ color: colors.onSurface, fontWeight: '900', lineHeight: 30, marginTop: 2 }}
+            >
+              Route
+            </Text>
+            <Text
+              variant="bodyMedium"
+              style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
+            >
+              {routeState === 'loading'
+                ? 'Loading route from LTA...'
+                : `${routeView.stops.length} stops across ${routeView.directions.length} direction${routeView.directions.length === 1 ? '' : 's'}`}
+            </Text>
+          </View>
+          <IconButton
+            accessibilityLabel="Close route view"
+            icon={() => <X color={colors.onSurface} size={21} strokeWidth={2.2} />}
+            mode="outlined"
+            onPress={onCloseRoute}
+          />
+        </View>
+      </View>
+      <Divider style={{ marginTop: e.spacing.md }} />
+      {routeState === 'loading' ? (
+        <View style={{ alignItems: 'center', padding: e.spacing.xl }}>
+          <ActivityIndicator color={colors.primary} size={24} />
+        </View>
+      ) : routeView.directions.length === 0 ? (
+        <Text
+          variant="bodyMedium"
+          style={{
+            color: colors.onSurfaceVariant,
+            textAlign: 'center',
+            marginTop: e.spacing.xl,
+            paddingHorizontal: e.spacing.lg,
+          }}
+        >
+          No route stops returned for this service.
+        </Text>
+      ) : (
+        routeView.directions.map((direction) => (
+          <View key={direction.direction}>
+            <View
+              style={{
+                backgroundColor: colors.surface,
+                borderBottomColor: colors.outlineVariant,
+                borderBottomWidth: StyleSheet.hairlineWidth,
+                paddingHorizontal: e.spacing.lg,
+                paddingTop: e.spacing.md,
+                paddingBottom: e.spacing.sm,
+              }}
+            >
+              <Text variant="labelLarge" style={{ color: colors.primary, fontWeight: '900' }}>
+                Direction {direction.direction}
+              </Text>
+            </View>
+            {direction.stops.map(({ sequence, stop }) => (
+              <View
+                key={`${direction.direction}:${sequence}:${stop.BusStopCode}`}
+                style={{
+                  borderBottomColor: colors.outlineVariant,
+                  borderBottomWidth: StyleSheet.hairlineWidth,
+                  flexDirection: 'row',
+                  gap: e.spacing.md,
+                  marginHorizontal: e.spacing.lg,
+                  paddingVertical: e.spacing.md,
+                }}
+              >
+                <Text
+                  variant="labelLarge"
+                  style={{ color: colors.onSurfaceVariant, fontWeight: '900', width: 32 }}
+                >
+                  {sequence}
+                </Text>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text
+                    variant="titleSmall"
+                    numberOfLines={1}
+                    onPress={() => onSelectFavoriteStop(stop.BusStopCode)}
+                    style={{ color: colors.onSurface, fontWeight: '900' }}
+                  >
+                    {stop.Description}
+                  </Text>
+                  <Text
+                    variant="bodySmall"
+                    numberOfLines={1}
+                    style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
+                  >
+                    {stop.BusStopCode} · {stop.RoadName}
+                  </Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        ))
+      )}
+    </>
   );
 }
 
