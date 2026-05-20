@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Settings } from 'lucide-react-native';
+import { Settings, Star } from 'lucide-react-native';
 import { Text, useTheme } from 'react-native-paper';
 
 import { AppTheme } from '../theme';
@@ -8,10 +8,11 @@ import { AppTheme } from '../theme';
 type AppHeaderProps = {
   topBarHeight: number;
   topInset: number;
+  onOpenFavorites: () => void;
   onOpenSettings: () => void;
 };
 
-export function AppHeader({ topBarHeight, topInset, onOpenSettings }: AppHeaderProps) {
+export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSettings }: AppHeaderProps) {
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
   const e = theme.expressive;
@@ -37,21 +38,38 @@ export function AppHeader({ topBarHeight, topInset, onOpenSettings }: AppHeaderP
           SG Bus Timings
         </Text>
       </View>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Open settings"
-        onPress={onOpenSettings}
-        style={({ pressed }) => [
-          styles.iconButton,
-          {
-            backgroundColor: pressed ? colors.elevation.level4 : colors.elevation.level3,
-            borderRadius: e.radius.medium,
-            borderColor: colors.outlineVariant,
-          },
-        ]}
-      >
-        <Settings color={colors.onSurface} size={21} strokeWidth={2.2} />
-      </Pressable>
+      <View style={styles.actions}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open favourites"
+          onPress={onOpenFavorites}
+          style={({ pressed }) => [
+            styles.iconButton,
+            {
+              backgroundColor: pressed ? colors.elevation.level4 : colors.elevation.level3,
+              borderRadius: e.radius.medium,
+              borderColor: colors.outlineVariant,
+            },
+          ]}
+        >
+          <Star color={colors.secondary} fill={colors.secondary} size={21} strokeWidth={2.2} />
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Open settings"
+          onPress={onOpenSettings}
+          style={({ pressed }) => [
+            styles.iconButton,
+            {
+              backgroundColor: pressed ? colors.elevation.level4 : colors.elevation.level3,
+              borderRadius: e.radius.medium,
+              borderColor: colors.outlineVariant,
+            },
+          ]}
+        >
+          <Settings color={colors.onSurface} size={21} strokeWidth={2.2} />
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -71,6 +89,10 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
     paddingLeft: 8,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 8,
   },
   iconButton: {
     alignItems: 'center',

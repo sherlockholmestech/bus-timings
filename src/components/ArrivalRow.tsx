@@ -1,12 +1,18 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Accessibility } from 'lucide-react-native';
-import { Text, useTheme } from 'react-native-paper';
+import { Accessibility, Star } from 'lucide-react-native';
+import { IconButton, Text, useTheme } from 'react-native-paper';
 
 import { BusArrival, BusServiceArrival, minutesUntilArrival } from '../lib/lta';
 import { AppTheme } from '../theme';
 
-export function ArrivalRow({ service }: { service: BusServiceArrival }) {
+type ArrivalRowProps = {
+  service: BusServiceArrival;
+  isFavorite?: boolean;
+  onToggleFavorite?: () => void;
+};
+
+export function ArrivalRow({ service, isFavorite = false, onToggleFavorite }: ArrivalRowProps) {
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
   const e = theme.expressive;
@@ -77,6 +83,20 @@ export function ArrivalRow({ service }: { service: BusServiceArrival }) {
           </View>
         )}
       </View>
+      {onToggleFavorite && (
+        <IconButton
+          accessibilityLabel={isFavorite ? `Unstar service ${service.ServiceNo}` : `Star service ${service.ServiceNo}`}
+          icon={() => (
+            <Star
+              color={isFavorite ? colors.secondary : colors.onSurfaceVariant}
+              fill={isFavorite ? colors.secondary : 'transparent'}
+              size={21}
+              strokeWidth={2.2}
+            />
+          )}
+          onPress={onToggleFavorite}
+        />
+      )}
     </View>
   );
 }

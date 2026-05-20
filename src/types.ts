@@ -9,3 +9,8 @@ export type MapBounds = {
   west: number;
   zoom: number;
 };
+
+export type FavoriteService = {
+  busStopCode: string;
+  serviceNo: string;
+};

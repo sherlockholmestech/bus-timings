@@ -23,6 +23,7 @@ import { Provider as PaperProvider, useTheme } from 'react-native-paper';
 
 import { AppHeader } from './src/components/AppHeader';
 import { ArrivalsDrawer } from './src/components/ArrivalsDrawer';
+import type { FavoriteArrivalItem } from './src/components/ArrivalsDrawer';
 import { HomeSearchLauncher } from './src/components/HomeSearchLauncher';
 import { LeafletMap } from './src/components/LeafletMap';
 import { LocationButton } from './src/components/LocationButton';
@@ -37,11 +38,12 @@ import {
 } from './src/lib/lta';
 import { searchBusStops } from './src/lib/search';
 import { darkTheme, lightTheme, type AppTheme } from './src/theme';
-import { LoadState, MapBounds, ThemeChoice } from './src/types';
+import { FavoriteService, LoadState, MapBounds, ThemeChoice } from './src/types';
 
 const ACCOUNT_KEY_STORAGE = 'lta.accountKey';
 const BUS_STOPS_STORAGE = 'lta.busStops';
 const BUS_STOPS_CACHE_TIME_STORAGE = 'lta.busStops.cachedAt';
+const FAVORITES_STORAGE = 'lta.favoriteServices';
 const THEME_STORAGE = 'ui.theme';
 const ARRIVAL_REFRESH_MS = 20000;
 
@@ -83,8 +85,11 @@ function AppContent({
   const [busStops, setBusStops] = useState<BusStop[]>([]);
   const [selectedStop, setSelectedStop] = useState<BusStop | null>(null);
   const [arrivals, setArrivals] = useState<BusArrivalResponse | null>(null);
+  const [favoriteArrivals, setFavoriteArrivals] = useState<Record<string, BusArrivalResponse>>({});
+  const [favorites, setFavorites] = useState<FavoriteService[]>([]);
   const [busStopState, setBusStopState] = useState<LoadState>('idle');
   const [arrivalState, setArrivalState] = useState<LoadState>('idle');
+  const [favoriteArrivalState, setFavoriteArrivalState] = useState<LoadState>('idle');
   const [, setLocationState] = useState<LoadState>('idle');
   const [query, setQuery] = useState('');
   const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
@@ -153,9 +158,10 @@ function AppContent({
   }, [showSearch, showSettings]);
 
   const bootstrap = async () => {
-    const [storedKey, storedStops, storedTheme] = await Promise.all([
+    const [storedKey, storedStops, storedFavorites, storedTheme] = await Promise.all([
       AsyncStorage.getItem(ACCOUNT_KEY_STORAGE),
       AsyncStorage.getItem(BUS_STOPS_STORAGE),
+      AsyncStorage.getItem(FAVORITES_STORAGE),
       AsyncStorage.getItem(THEME_STORAGE)
     ]);
 
@@ -174,12 +180,17 @@ function AppContent({
       try {
         const parsedStops = JSON.parse(storedStops) as BusStop[];
         setBusStops(parsedStops);
-        setSelectedStop(parsedStops[0] ?? null);
-        if (parsedStops[0]) {
-          bottomSheetRef.current?.snapToIndex(1);
-        }
       } catch {
         await AsyncStorage.removeItem(BUS_STOPS_STORAGE);
+      }
+    }
+
+    if (storedFavorites) {
+      try {
+        const parsedFavorites = JSON.parse(storedFavorites) as FavoriteService[];
+        setFavorites(parsedFavorites.filter(isFavoriteService));
+      } catch {
+        await AsyncStorage.removeItem(FAVORITES_STORAGE);
       }
     }
 
@@ -266,7 +277,6 @@ function AppContent({
       try {
         const stops = await fetchBusStops(key);
         setBusStops(stops);
-        setSelectedStop((current) => current ?? stops[0] ?? null);
         await Promise.all([
           AsyncStorage.setItem(BUS_STOPS_STORAGE, JSON.stringify(stops)),
           AsyncStorage.setItem(BUS_STOPS_CACHE_TIME_STORAGE, new Date().toISOString())
@@ -297,20 +307,53 @@ function AppContent({
     }
   }, [accountKey, selectedStop]);
 
+  const loadFavoriteArrivals = useCallback(async () => {
+    const favoriteStopCodes = [...new Set(favorites.map((favorite) => favorite.busStopCode))];
+    if (!accountKey.trim() || favoriteStopCodes.length === 0) {
+      return;
+    }
+
+    setFavoriteArrivalState('loading');
+    try {
+      const responses = await Promise.all(
+        favoriteStopCodes.map((busStopCode) => fetchArrivals(accountKey.trim(), busStopCode))
+      );
+      setFavoriteArrivals(
+        responses.reduce<Record<string, BusArrivalResponse>>((byStopCode, response) => {
+          byStopCode[response.BusStopCode] = response;
+          return byStopCode;
+        }, {})
+      );
+      setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setFavoriteArrivalState('idle');
+    } catch (error) {
+      setFavoriteArrivalState('error');
+      Alert.alert('Could not load favourite arrivals', error instanceof Error ? error.message : 'Unknown error');
+    }
+  }, [accountKey, favorites]);
+
   useEffect(() => {
     if (arrivalTimer.current) {
       clearInterval(arrivalTimer.current);
     }
 
-    if (!selectedStop || !accountKey.trim()) {
+    if (!accountKey.trim()) {
       return;
     }
 
-    void loadArrivals();
-    arrivalTimer.current = setInterval(() => {
+    if (selectedStop) {
       void loadArrivals();
+    } else {
+      void loadFavoriteArrivals();
+    }
+    arrivalTimer.current = setInterval(() => {
+      if (selectedStop) {
+        void loadArrivals();
+      } else {
+        void loadFavoriteArrivals();
+      }
     }, ARRIVAL_REFRESH_MS);
-  }, [accountKey, loadArrivals, selectedStop]);
+  }, [accountKey, loadArrivals, loadFavoriteArrivals, selectedStop]);
 
   const saveAccountKey = async () => {
     const trimmed = draftKey.trim();
@@ -326,11 +369,61 @@ function AppContent({
     await AsyncStorage.setItem(THEME_STORAGE, choice);
   };
 
+  const toggleFavorite = async (favorite: FavoriteService) => {
+    const exists = favorites.some(
+      (candidate) =>
+        candidate.busStopCode === favorite.busStopCode &&
+        candidate.serviceNo === favorite.serviceNo
+    );
+    const nextFavorites = exists
+      ? favorites.filter(
+          (candidate) =>
+            candidate.busStopCode !== favorite.busStopCode ||
+            candidate.serviceNo !== favorite.serviceNo
+        )
+      : [...favorites, favorite].sort(compareFavorites);
+
+    setFavorites(nextFavorites);
+    await AsyncStorage.setItem(FAVORITES_STORAGE, JSON.stringify(nextFavorites));
+  };
+
+  const selectStopByCode = (busStopCode: string) => {
+    const stop = busStops.find((candidate) => candidate.BusStopCode === busStopCode);
+    if (stop) {
+      setSelectedStop(stop);
+      bottomSheetRef.current?.snapToIndex(1);
+    }
+  };
+
+  const openFavorites = () => {
+    setSelectedStop(null);
+    setQuery('');
+    setShowSearch(false);
+    bottomSheetRef.current?.snapToIndex(1);
+  };
+
   const searchResults = useMemo(() => searchBusStops(busStops, query), [busStops, query]);
   const mapStops = useMemo(() => getVisibleStops(busStops, mapBounds, selectedStop), [busStops, mapBounds, selectedStop]);
-  const selectedServices = useMemo(
-    () => [...(arrivals?.Services ?? [])].sort((a, b) => a.ServiceNo.localeCompare(b.ServiceNo, undefined, { numeric: true })),
-    [arrivals?.Services]
+  const selectedServices = useMemo(() => {
+    const services = arrivals?.BusStopCode === selectedStop?.BusStopCode ? arrivals?.Services ?? [] : [];
+    return [...services].sort((a, b) =>
+      a.ServiceNo.localeCompare(b.ServiceNo, undefined, { numeric: true })
+    );
+  }, [arrivals, selectedStop?.BusStopCode]);
+  const favoriteItems = useMemo<FavoriteArrivalItem[]>(
+    () =>
+      favorites.map((favorite) => {
+        const response = favoriteArrivals[favorite.busStopCode];
+        const service =
+          response?.Services.find((candidate) => candidate.ServiceNo === favorite.serviceNo) ??
+          createEmptyService(favorite.serviceNo);
+        return {
+          ...favorite,
+          stop: busStops.find((stop) => stop.BusStopCode === favorite.busStopCode),
+          service,
+        };
+      }),
+    [busStops, favoriteArrivals, favorites]
   );
 
   const mapCenter = selectedStop ? toCoordinate(selectedStop) : userLocation ?? singaporeCenter;
@@ -343,6 +436,7 @@ function AppContent({
       <AppHeader
         topBarHeight={topBarHeight}
         topInset={topInset}
+        onOpenFavorites={openFavorites}
         onOpenSettings={() => setShowSettings(true)}
       />
 
@@ -363,11 +457,7 @@ function AppContent({
         userLocation={userLocation}
         onBoundsChanged={setMapBounds}
         onStopSelected={(code) => {
-          const stop = busStops.find((candidate) => candidate.BusStopCode === code);
-          if (stop) {
-            setSelectedStop(stop);
-            bottomSheetRef.current?.snapToIndex(1);
-          }
+          selectStopByCode(code);
         }}
       />
 
@@ -382,13 +472,24 @@ function AppContent({
         arrivalState={arrivalState}
         animatedPosition={sheetPosition}
         bottomSheetRef={bottomSheetRef}
+        favoriteArrivalState={favoriteArrivalState}
+        favoriteItems={favoriteItems}
+        favorites={favorites}
         lastUpdated={lastUpdated}
         selectedServices={selectedServices}
         selectedStop={selectedStop}
         snapPoints={snapPoints}
         onChange={setSheetIndex}
+        onSelectFavoriteStop={selectStopByCode}
+        onToggleFavorite={(favorite) => {
+          void toggleFavorite(favorite);
+        }}
         onRefresh={() => {
-          void loadArrivals();
+          if (selectedStop) {
+            void loadArrivals();
+          } else {
+            void loadFavoriteArrivals();
+          }
         }}
       />
 
@@ -459,4 +560,45 @@ function getVisibleStops(busStops: BusStop[], mapBounds: MapBounds | null, selec
   }
 
   return visibleStops.slice(0, 500);
+}
+
+function compareFavorites(a: FavoriteService, b: FavoriteService) {
+  const stopCompare = a.busStopCode.localeCompare(b.busStopCode, undefined, { numeric: true });
+  if (stopCompare !== 0) {
+    return stopCompare;
+  }
+
+  return a.serviceNo.localeCompare(b.serviceNo, undefined, { numeric: true });
+}
+
+function isFavoriteService(value: FavoriteService) {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof value.busStopCode === 'string' &&
+    typeof value.serviceNo === 'string'
+  );
+}
+
+function createEmptyService(serviceNo: string) {
+  const emptyBus = {
+    OriginCode: '',
+    DestinationCode: '',
+    EstimatedArrival: '',
+    Monitored: 0,
+    Latitude: '',
+    Longitude: '',
+    VisitNumber: '',
+    Load: '',
+    Feature: '',
+    Type: '',
+  };
+
+  return {
+    ServiceNo: serviceNo,
+    Operator: '',
+    NextBus: emptyBus,
+    NextBus2: emptyBus,
+    NextBus3: emptyBus,
+  };
 }
