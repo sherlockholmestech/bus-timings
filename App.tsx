@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BackHandler,
   Dimensions,
+  Keyboard,
   Platform,
   Pressable,
   ScrollView,
@@ -15,6 +16,12 @@ import {
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue
+} from 'react-native-reanimated';
 import {
   ActivityIndicator,
   Appbar,
@@ -127,9 +134,32 @@ function AppContent({
   const mapTopInset = searchTop + 66;
 
   const peekHeight = useMemo(() => Math.max(170, screenHeight * 0.22), [screenHeight]);
-  const openHeight = useMemo(() => Math.max(390, screenHeight * 0.56), [screenHeight]);
+  const openHeight = useMemo(() => {
+    const desiredOpenHeight = screenHeight * 0.6;
+    const maxHeightBelowSearch = Math.max(peekHeight, screenHeight - mapTopInset - 8);
+    return Math.max(peekHeight, Math.min(desiredOpenHeight, maxHeightBelowSearch));
+  }, [mapTopInset, peekHeight, screenHeight]);
   const snapPoints = useMemo(() => [peekHeight, openHeight], [peekHeight, openHeight]);
   const [sheetIndex, setSheetIndex] = useState(1);
+  const sheetPosition = useSharedValue(screenHeight - openHeight);
+  const locationButtonStyle = useAnimatedStyle(() => {
+    const expandedTop = screenHeight - openHeight;
+    const visibleProgress = interpolate(
+      sheetPosition.value,
+      [expandedTop, expandedTop + 28],
+      [0, 1],
+      Extrapolation.CLAMP
+    );
+
+    return {
+      opacity: visibleProgress,
+      transform: [
+        {
+          translateY: sheetPosition.value - 64,
+        },
+      ],
+    };
+  }, [openHeight, screenHeight]);
 
   useEffect(() => {
     void bootstrap();
@@ -342,10 +372,16 @@ function AppContent({
     }
 
     return busStops
-      .filter((stop) => {
-        const haystack = `${stop.BusStopCode} ${stop.Description} ${stop.RoadName}`.toLowerCase();
-        return haystack.includes(normalizedQuery);
+      .map((stop) => {
+        const searchable = `${stop.BusStopCode} ${stop.Description} ${stop.RoadName}`.toLowerCase();
+        return {
+          score: scoreSearchResult(normalizedQuery, searchable, stop.BusStopCode.toLowerCase()),
+          stop,
+        };
       })
+      .filter((result) => result.score > 0)
+      .sort((a, b) => b.score - a.score || a.stop.Description.localeCompare(b.stop.Description))
+      .map((result) => result.stop)
       .slice(0, 50);
   }, [busStops, query]);
 
@@ -393,7 +429,7 @@ function AppContent({
           {
             height: topBarHeight,
             paddingTop: topInset + 10,
-            backgroundColor: colors.elevation.level2,
+            backgroundColor: colors.background,
             zIndex: 20,
           },
         ]}
@@ -405,13 +441,6 @@ function AppContent({
             style={{ color: colors.onSurface, fontWeight: '800', lineHeight: 28 }}
           >
             SG Bus Timings
-          </Text>
-          <Text
-            variant="bodySmall"
-            numberOfLines={1}
-            style={{ color: colors.onSurfaceVariant, marginTop: 2, lineHeight: 18 }}
-          >
-            {busStops.length > 0 ? `${busStops.length.toLocaleString()} stops cached` : 'Add LTA key in settings'}
           </Text>
         </View>
         <Pressable
@@ -444,15 +473,18 @@ function AppContent({
         ]}
         elevation={2}
       >
-        <Searchbar
-          placeholder="Search stops"
-          onFocus={() => setShowSearch(true)}
-          value={selectedStop ? `${selectedStop.BusStopCode} · ${selectedStop.Description}` : ''}
-          style={{ backgroundColor: colors.surface, borderRadius: e.radius.large }}
-          inputStyle={{ color: colors.onSurface }}
-          iconColor={colors.onSurfaceVariant}
-          placeholderTextColor={colors.onSurfaceVariant}
-        />
+        <Pressable onPress={() => setShowSearch(true)}>
+          <View pointerEvents="none">
+            <Searchbar
+              placeholder="Search stops"
+              value={selectedStop ? `${selectedStop.BusStopCode} · ${selectedStop.Description}` : ''}
+              style={{ backgroundColor: colors.surface, borderRadius: e.radius.large }}
+              inputStyle={{ color: colors.onSurface }}
+              iconColor={colors.onSurfaceVariant}
+              placeholderTextColor={colors.onSurfaceVariant}
+            />
+          </View>
+        </Pressable>
       </Surface>
 
       {/* Map */}
@@ -476,34 +508,37 @@ function AppContent({
       />
 
       {/* Location Button */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Go to current location"
-        style={({ pressed }) => [
-          styles.fab,
-          {
-            bottom: bottomInset + 16,
-            backgroundColor: pressed ? colors.primary : colors.primaryContainer,
-            borderRadius: e.radius.medium,
-            borderColor: colors.outlineVariant,
-          },
-        ]}
-        onPress={() => {
-          void goToCurrentLocation();
-        }}
-      >
-        <LocateFixed
-          color={colors.onPrimaryContainer}
-          size={21}
-          strokeWidth={2.3}
-        />
-      </Pressable>
+      <Animated.View style={[styles.fabLayer, locationButtonStyle]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Go to current location"
+          style={({ pressed }) => [
+            styles.fab,
+            {
+              backgroundColor: pressed ? '#282726' : '#100F0F',
+              borderRadius: e.radius.medium,
+              borderColor: colors.outlineVariant,
+            },
+          ]}
+          onPress={() => {
+            void goToCurrentLocation();
+          }}
+        >
+          <LocateFixed
+            color="#FFFCF0"
+            size={21}
+            strokeWidth={2.3}
+          />
+        </Pressable>
+      </Animated.View>
 
       {/* Bottom Sheet */}
       <BottomSheet
         ref={bottomSheetRef}
         index={1}
         snapPoints={snapPoints}
+        enableDynamicSizing={false}
+        animatedPosition={sheetPosition}
         onChange={setSheetIndex}
         backgroundStyle={{
           backgroundColor: colors.surface,
@@ -620,7 +655,11 @@ function AppContent({
           elevation={0}
         >
           <Appbar.Header
-            style={{ backgroundColor: colors.elevation.level2, paddingTop: topInset + 4 }}
+            style={{
+              backgroundColor: colors.background,
+              height: topBarHeight,
+              paddingTop: topInset + 10,
+            }}
             statusBarHeight={0}
           >
             <Appbar.BackAction onPress={() => setShowSettings(false)} />
@@ -721,8 +760,10 @@ function AppContent({
         >
           <Appbar.Header
             style={{
-              backgroundColor: colors.elevation.level2,
-              paddingTop: topInset + 4,
+              backgroundColor: colors.background,
+              height: topBarHeight,
+              paddingHorizontal: e.spacing.sm,
+              paddingTop: topInset + 10,
             }}
             statusBarHeight={0}
           >
@@ -743,6 +784,7 @@ function AppContent({
             <Appbar.Action
               icon="close"
               onPress={() => {
+                Keyboard.dismiss();
                 setShowSearch(false);
                 setQuery('');
               }}
@@ -757,11 +799,15 @@ function AppContent({
           >
             {query.trim() ? (
               searchResults.length > 0 ? (
-                searchResults.map((stop) => (
+                searchResults.map((stop, index) => (
                   <List.Item
                     key={stop.BusStopCode}
                     title={stop.Description}
                     description={`${stop.BusStopCode} · ${stop.RoadName}`}
+                    style={{
+                      borderBottomColor: colors.outlineVariant,
+                      borderBottomWidth: index === searchResults.length - 1 ? 0 : StyleSheet.hairlineWidth,
+                    }}
                     titleStyle={{ color: colors.onSurface, fontWeight: '800' }}
                     descriptionStyle={{ color: colors.onSurfaceVariant }}
                     left={() => (
@@ -775,9 +821,10 @@ function AppContent({
                       </View>
                     )}
                     onPress={() => {
+                      Keyboard.dismiss();
+                      setShowSearch(false);
                       setSelectedStop(stop);
                       setQuery('');
-                      setShowSearch(false);
                       bottomSheetRef.current?.snapToIndex(1);
                     }}
                   />
@@ -842,36 +889,34 @@ function ArrivalRow({ service }: { service: BusServiceArrival }) {
           width: 72,
         }}
       >
-        <Surface
+        <View
           style={{
             alignItems: 'center',
             alignSelf: 'stretch',
-            borderRadius: e.radius.medium,
-            backgroundColor: operator.badge,
-            borderColor: operator.accent,
-            borderWidth: StyleSheet.hairlineWidth,
+            borderLeftColor: operator.accent,
+            borderLeftWidth: 4,
             justifyContent: 'center',
             minHeight: 54,
-            paddingHorizontal: e.spacing.xs,
+            paddingLeft: e.spacing.sm,
+            paddingRight: e.spacing.xs,
           }}
-          elevation={0}
         >
           <Text
             variant="titleMedium"
             numberOfLines={1}
             adjustsFontSizeToFit
-            style={{ color: operator.text, fontWeight: '900', lineHeight: 24 }}
+            style={{ color: colors.onSurface, fontWeight: '900', lineHeight: 24 }}
           >
             {service.ServiceNo}
           </Text>
           <Text
             variant="labelSmall"
             numberOfLines={1}
-            style={{ color: operator.mutedText, fontWeight: '800', marginTop: 1 }}
+            style={{ color: colors.onSurfaceVariant, fontWeight: '800', marginTop: 1 }}
           >
             {service.Operator}
           </Text>
-        </Surface>
+        </View>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         {buses.length === 0 ? (
@@ -898,19 +943,14 @@ function BusTime({ bus }: { bus: BusArrival }) {
   const crowd = crowdInfo(bus.Load);
 
   return (
-    <Surface
+    <View
       style={{
         alignItems: 'center',
         justifyContent: 'center',
-        borderRadius: e.radius.small,
-        backgroundColor: colors.elevation.level1,
-        borderColor: colors.outlineVariant,
-        borderWidth: StyleSheet.hairlineWidth,
         height: 48,
-        minWidth: 58,
+        minWidth: 52,
         paddingHorizontal: e.spacing.sm,
       }}
-      elevation={0}
     >
       <Text
         variant="titleMedium"
@@ -940,18 +980,48 @@ function BusTime({ bus }: { bus: BusArrival }) {
           <Accessibility color={colors.primary} size={14} strokeWidth={2.4} />
         )}
       </View>
-    </Surface>
+    </View>
   );
+}
+
+function scoreSearchResult(query: string, searchable: string, stopCode: string) {
+  if (stopCode === query) {
+    return 1000;
+  }
+  if (stopCode.startsWith(query)) {
+    return 900 - stopCode.length;
+  }
+  if (searchable.includes(query)) {
+    return 700 - searchable.indexOf(query);
+  }
+
+  let score = 0;
+  let searchIndex = 0;
+  let streak = 0;
+
+  for (const char of query) {
+    const nextIndex = searchable.indexOf(char, searchIndex);
+    if (nextIndex === -1) {
+      return 0;
+    }
+
+    const gap = nextIndex - searchIndex;
+    streak = gap === 0 ? streak + 1 : 0;
+    score += 12 + streak * 6 - Math.min(gap, 12);
+    searchIndex = nextIndex + 1;
+  }
+
+  return score - searchable.length * 0.05;
 }
 
 function crowdInfo(load: string) {
   switch (load) {
     case 'SEA':
-      return { label: 'Seats available', color: (c: AppTheme['colors']) => c.primary };
+      return { label: 'Seats available', color: () => '#879A39' };
     case 'SDA':
-      return { label: 'Standing available', color: (c: AppTheme['colors']) => c.secondary };
+      return { label: 'Standing available', color: () => '#AD8301' };
     case 'LSD':
-      return { label: 'Limited standing', color: (c: AppTheme['colors']) => c.error };
+      return { label: 'Limited standing', color: () => '#D14D41' };
     default:
       return { label: 'Crowd unknown', color: (c: AppTheme['colors']) => c.outlineVariant };
   }
@@ -961,43 +1031,23 @@ function operatorInfo(operator: string) {
   switch (operator) {
     case 'SBST':
       return {
-        card: '#F0EAEC',
-        badge: '#E2D9E9',
-        accent: '#8B7EC8',
-        text: '#261C39',
-        mutedText: '#5E409D'
+        accent: '#8B7EC8'
       };
     case 'SMRT':
       return {
-        card: '#FFFCF0',
-        badge: '#FFFFFF',
-        accent: '#9F9D96',
-        text: '#100F0F',
-        mutedText: '#575653'
+        accent: '#6F6E69'
       };
     case 'TTS':
       return {
-        card: '#EDEECF',
-        badge: '#DDE2B2',
-        accent: '#879A39',
-        text: '#252D09',
-        mutedText: '#536907'
+        accent: '#879A39'
       };
     case 'GAS':
       return {
-        card: '#FFE7CE',
-        badge: '#FED3AF',
-        accent: '#DA702C',
-        text: '#40200D',
-        mutedText: '#9D4310'
+        accent: '#DA702C'
       };
     default:
       return {
-        card: '#DDF1E4',
-        badge: '#BFE8D9',
-        accent: '#3AA99F',
-        text: '#122F2C',
-        mutedText: '#1C6C66'
+        accent: '#4385BE'
       };
   }
 }
@@ -1030,15 +1080,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 44,
   },
+  fabLayer: {
+    left: 16,
+    position: 'absolute',
+    top: 0,
+    zIndex: 10,
+  },
   fab: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     height: 48,
     justifyContent: 'center',
-    left: 16,
-    position: 'absolute',
     width: 48,
-    zIndex: 35,
   },
   overlay: {
     bottom: 0,

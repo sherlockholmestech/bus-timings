@@ -120,10 +120,10 @@ function buildMapHtml() {
     .bus-marker {
       align-items: center;
       background: #ffffff;
-      border: 2px solid #005f4b;
+      border: 2px solid #205EA6;
       border-radius: 16px;
       box-shadow: 0 2px 8px rgba(16, 24, 40, 0.28);
-      color: #005f4b;
+      color: #205EA6;
       display: flex;
       font-size: 10px;
       font-weight: 800;
@@ -132,8 +132,8 @@ function buildMapHtml() {
       width: 42px;
     }
     .bus-marker.selected {
-      background: #005f4b;
-      border-color: #005f4b;
+      background: #205EA6;
+      border-color: #205EA6;
       color: #ffffff;
     }
     .user-marker {
@@ -240,8 +240,8 @@ function buildMapHtml() {
         const isSelected = stop.BusStopCode === payload.selectedStopCode;
         const darkStyle = isDark
           ? (isSelected
-              ? 'background:#49d9af;color:#003828;border-color:#49d9af;'
-              : 'background:#1a1c1a;color:#49d9af;border-color:#49d9af;')
+              ? 'background:#4385BE;color:#100F0F;border-color:#4385BE;'
+              : 'background:#1C1B1A;color:#4385BE;border-color:#4385BE;')
           : '';
         const icon = L.divIcon({
           className: '',
