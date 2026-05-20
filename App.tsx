@@ -403,7 +403,7 @@ export default function App() {
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style={colors.status} backgroundColor={colors.bg} />
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.app}>
-        <TopBar busStopsCount={busStops.length} onOpenSettings={() => setShowSettings(true)} styles={styles} topInset={topInset} textColor={colors.tx} />
+        <TopBar onOpenSettings={() => setShowSettings(true)} styles={styles} topInset={topInset} textColor={colors.tx} />
 
         <SearchBar onOpenSearch={() => setShowSearch(true)} selectedStop={selectedStop} styles={styles} topInset={topInset} />
 
