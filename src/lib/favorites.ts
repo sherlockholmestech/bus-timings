@@ -1,21 +1,24 @@
 import { BusServiceArrival } from './lta';
+import { compareBusStopCodes, compareServiceNumbers } from './sort';
 import { FavoriteService } from '../types';
 
 export function compareFavorites(a: FavoriteService, b: FavoriteService) {
-  const stopCompare = a.busStopCode.localeCompare(b.busStopCode, undefined, { numeric: true });
+  const stopCompare = compareBusStopCodes(a.busStopCode, b.busStopCode);
   if (stopCompare !== 0) {
     return stopCompare;
   }
 
-  return a.serviceNo.localeCompare(b.serviceNo, undefined, { numeric: true });
+  return compareServiceNumbers(a.serviceNo, b.serviceNo);
 }
 
-export function isFavoriteService(value: FavoriteService) {
+export function isFavoriteService(value: unknown): value is FavoriteService {
+  const favorite = value as Partial<FavoriteService>;
+
   return (
     typeof value === 'object' &&
     value !== null &&
-    typeof value.busStopCode === 'string' &&
-    typeof value.serviceNo === 'string'
+    typeof favorite.busStopCode === 'string' &&
+    typeof favorite.serviceNo === 'string'
   );
 }
 

@@ -6,6 +6,19 @@ import { IconButton, Text, useTheme } from 'react-native-paper';
 import { BusArrival, BusServiceArrival, minutesUntilArrival } from '../lib/lta';
 import { AppTheme } from '../theme';
 
+const CROWD_COLORS: Record<string, string> = {
+  SEA: '#879A39',
+  SDA: '#AD8301',
+  LSD: '#D14D41',
+};
+
+const OPERATOR_ACCENTS: Record<string, string> = {
+  SBST: '#8B7EC8',
+  SMRT: '#6F6E69',
+  TTS: '#879A39',
+  GAS: '#DA702C',
+};
+
 type ArrivalRowProps = {
   service: BusServiceArrival;
   isFavorite?: boolean;
@@ -24,10 +37,8 @@ export function ArrivalRow({
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
   const e = theme.expressive;
-  const operator = operatorInfo(service.Operator);
-  const buses = [service.NextBus, service.NextBus2, service.NextBus3].filter(
-    (bus) => bus.EstimatedArrival
-  );
+  const activeBuses = [service.NextBus, service.NextBus2, service.NextBus3].filter(hasArrival);
+  const operatorAccent = OPERATOR_ACCENTS[service.Operator] ?? '#4385BE';
 
   return (
     <View
@@ -58,7 +69,7 @@ export function ArrivalRow({
             alignItems: 'center',
             alignSelf: 'stretch',
             backgroundColor: isRouteSelected ? colors.elevation.level2 : 'transparent',
-            borderLeftColor: isRouteSelected ? colors.primary : operator.accent,
+            borderLeftColor: isRouteSelected ? colors.primary : operatorAccent,
             borderLeftWidth: 4,
             borderRadius: e.radius.small,
             justifyContent: 'center',
@@ -85,13 +96,13 @@ export function ArrivalRow({
         </Pressable>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        {buses.length === 0 ? (
+        {activeBuses.length === 0 ? (
           <Text variant="bodyMedium" style={{ color: colors.onSurfaceVariant }}>
             No active arrival
           </Text>
         ) : (
           <View style={{ flexDirection: 'row', gap: e.spacing.sm, flexWrap: 'wrap' }}>
-            {buses.map((bus, index) => (
+            {activeBuses.map((bus, index) => (
               <BusTime key={`${service.ServiceNo}-${index}`} bus={bus} />
             ))}
           </View>
@@ -120,7 +131,7 @@ function BusTime({ bus }: { bus: BusArrival }) {
   const colors = theme.colors;
   const e = theme.expressive;
   const mins = minutesUntilArrival(bus.EstimatedArrival);
-  const crowd = crowdInfo(bus.Load);
+  const crowdColor = CROWD_COLORS[bus.Load] ?? colors.outlineVariant;
 
   return (
     <View
@@ -153,7 +164,7 @@ function BusTime({ bus }: { bus: BusArrival }) {
             flex: 1,
             height: 6,
             borderRadius: 3,
-            backgroundColor: crowd.color(colors),
+            backgroundColor: crowdColor,
           }}
         />
         {bus.Feature === 'WAB' && (
@@ -164,30 +175,6 @@ function BusTime({ bus }: { bus: BusArrival }) {
   );
 }
 
-function crowdInfo(load: string) {
-  switch (load) {
-    case 'SEA':
-      return { label: 'Seats available', color: () => '#879A39' };
-    case 'SDA':
-      return { label: 'Standing available', color: () => '#AD8301' };
-    case 'LSD':
-      return { label: 'Limited standing', color: () => '#D14D41' };
-    default:
-      return { label: 'Crowd unknown', color: (c: AppTheme['colors']) => c.outlineVariant };
-  }
-}
-
-function operatorInfo(operator: string) {
-  switch (operator) {
-    case 'SBST':
-      return { accent: '#8B7EC8' };
-    case 'SMRT':
-      return { accent: '#6F6E69' };
-    case 'TTS':
-      return { accent: '#879A39' };
-    case 'GAS':
-      return { accent: '#DA702C' };
-    default:
-      return { accent: '#4385BE' };
-  }
+function hasArrival(bus: BusArrival) {
+  return Boolean(bus.EstimatedArrival);
 }

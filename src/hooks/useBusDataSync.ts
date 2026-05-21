@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useState } from 'react';
 import { Alert } from 'react-native';
 
+import { errorMessage } from '../lib/errors';
 import { BusStop, fetchBusStops } from '../lib/lta';
 import {
   BUS_STOPS_CACHE_TIME_STORAGE,
@@ -58,7 +59,7 @@ export function useBusDataSync({
       } catch (error) {
         setSyncState('error');
         setSyncLabel('Sync failed');
-        Alert.alert('Could not sync bus data', error instanceof Error ? error.message : 'Unknown error');
+        Alert.alert('Could not sync bus data', errorMessage(error));
       }
     },
     [accountKey, onSettingsNeeded, onStopsSynced]

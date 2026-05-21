@@ -22,6 +22,23 @@ export type AppTheme = MD3Theme & {
 
 const fontConfig = configureFonts({ config: { fontFamily: 'sans-serif' } });
 
+const expressive: AppTheme['expressive'] = {
+  radius: {
+    small: 8,
+    medium: 16,
+    large: 20,
+    extraLarge: 28,
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 24,
+    xxl: 32,
+  },
+};
+
 const flexokiLight = {
   bg: '#FFFCF0',
   bg2: '#F2F0E5',
@@ -106,22 +123,7 @@ export const lightTheme: AppTheme = {
     onSurfaceDisabled: 'rgba(16, 15, 15, 0.38)',
     backdrop: 'rgba(16, 15, 15, 0.42)',
   },
-  expressive: {
-    radius: {
-      small: 8,
-      medium: 16,
-      large: 20,
-      extraLarge: 28,
-    },
-    spacing: {
-      xs: 4,
-      sm: 8,
-      md: 12,
-      lg: 16,
-      xl: 24,
-      xxl: 32,
-    },
-  },
+  expressive,
 };
 
 export const darkTheme: AppTheme = {
@@ -170,20 +172,5 @@ export const darkTheme: AppTheme = {
     onSurfaceDisabled: 'rgba(206, 205, 195, 0.38)',
     backdrop: 'rgba(16, 15, 15, 0.68)',
   },
-  expressive: {
-    radius: {
-      small: 8,
-      medium: 16,
-      large: 20,
-      extraLarge: 28,
-    },
-    spacing: {
-      xs: 4,
-      sm: 8,
-      md: 12,
-      lg: 16,
-      xl: 24,
-      xxl: 32,
-    },
-  },
+  expressive,
 };

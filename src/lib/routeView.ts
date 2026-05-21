@@ -1,5 +1,6 @@
 import { Coordinate, toCoordinate } from './geo';
 import { BusRoute, BusStop } from './lta';
+import { compareBusStopCodes } from './sort';
 import { MapBounds } from '../types';
 
 export type ServiceRouteView = {
@@ -53,11 +54,11 @@ export function getServiceRoute(
   }
 
   const routesByDirection = busRoutes
-    .filter((route) => route.s === serviceNo)
+    .filter((route) => route.serviceNo === serviceNo)
     .reduce<Record<number, BusRoute[]>>((byDirection, route) => {
-      const routes = byDirection[route.d] ?? [];
+      const routes = byDirection[route.direction] ?? [];
       routes.push(route);
-      byDirection[route.d] = routes;
+      byDirection[route.direction] = routes;
       return byDirection;
     }, {});
 
@@ -67,11 +68,11 @@ export function getServiceRoute(
     .map(([direction, routes]) => ({
       direction: Number(direction),
       stops: routes
-        .sort((a, b) => a.q - b.q)
+        .sort((a, b) => a.sequence - b.sequence)
         .map((route) => {
-          stopCodes.add(route.c);
-          const stop = busStopsByCode[route.c];
-          return stop ? { sequence: route.q, stop } : null;
+          stopCodes.add(route.busStopCode);
+          const stop = busStopsByCode[route.busStopCode];
+          return stop ? { sequence: route.sequence, stop } : null;
         })
         .filter((routeStop): routeStop is ServiceRouteStop => routeStop !== null),
     }))
@@ -84,7 +85,7 @@ export function getServiceRoute(
   const stops = [...stopCodes]
     .map((busStopCode) => busStopsByCode[busStopCode])
     .filter((stop): stop is BusStop => Boolean(stop))
-    .sort((a, b) => a.BusStopCode.localeCompare(b.BusStopCode, undefined, { numeric: true }));
+    .sort((a, b) => compareBusStopCodes(a.BusStopCode, b.BusStopCode));
 
   return { directions, stops, lines };
 }

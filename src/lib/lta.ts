@@ -1,3 +1,5 @@
+import { compareBusStopCodes, compareServiceNumbers } from './sort';
+
 const LTA_BASE_URL = 'https://datamall2.mytransport.sg/ltaodataservice';
 const PAGE_SIZE = 500;
 
@@ -8,6 +10,20 @@ export type BusStop = {
   Latitude: number;
   Longitude: number;
 };
+
+export function isBusStop(value: unknown): value is BusStop {
+  const stop = value as Partial<BusStop>;
+
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof stop.BusStopCode === 'string' &&
+    typeof stop.RoadName === 'string' &&
+    typeof stop.Description === 'string' &&
+    typeof stop.Latitude === 'number' &&
+    typeof stop.Longitude === 'number'
+  );
+}
 
 export type BusArrival = {
   OriginCode: string;
@@ -36,10 +52,10 @@ export type BusArrivalResponse = {
 };
 
 export type BusRoute = {
-  s: string;
-  d: number;
-  q: number;
-  c: string;
+  serviceNo: string;
+  direction: number;
+  sequence: number;
+  busStopCode: string;
 };
 
 type RawBusRoute = {
@@ -82,7 +98,7 @@ export async function fetchBusStops(accountKey: string, onPage?: (progress: Page
     }
   }
 
-  return stops.sort((a, b) => a.BusStopCode.localeCompare(b.BusStopCode));
+  return stops.sort((a, b) => compareBusStopCodes(a.BusStopCode, b.BusStopCode));
 }
 
 export async function fetchArrivals(accountKey: string, busStopCode: string) {
@@ -118,10 +134,10 @@ async function fetchFilteredBusRoutesForService(accountKey: string, serviceNo: s
     const values = page.value ?? [];
     routes.push(
       ...values.map((route) => ({
-        s: route.ServiceNo,
-        d: route.Direction,
-        q: route.StopSequence,
-        c: route.BusStopCode,
+        serviceNo: route.ServiceNo,
+        direction: route.Direction,
+        sequence: route.StopSequence,
+        busStopCode: route.BusStopCode,
       }))
     );
 
@@ -144,10 +160,10 @@ async function fetchScannedBusRoutesForService(accountKey: string, serviceNo: st
       ...values
         .filter((route) => route.ServiceNo === serviceNo)
         .map((route) => ({
-          s: route.ServiceNo,
-          d: route.Direction,
-          q: route.StopSequence,
-          c: route.BusStopCode,
+          serviceNo: route.ServiceNo,
+          direction: route.Direction,
+          sequence: route.StopSequence,
+          busStopCode: route.BusStopCode,
         }))
     );
 
@@ -170,17 +186,17 @@ export function minutesUntilArrival(estimatedArrival: string) {
 }
 
 function compareBusRoutes(a: BusRoute, b: BusRoute) {
-  const serviceCompare = a.s.localeCompare(b.s, undefined, { numeric: true });
+  const serviceCompare = compareServiceNumbers(a.serviceNo, b.serviceNo);
   if (serviceCompare !== 0) {
     return serviceCompare;
   }
 
-  const directionCompare = a.d - b.d;
+  const directionCompare = a.direction - b.direction;
   if (directionCompare !== 0) {
     return directionCompare;
   }
 
-  return a.q - b.q;
+  return a.sequence - b.sequence;
 }
 
 async function request<T>(url: string, accountKey: string): Promise<T> {

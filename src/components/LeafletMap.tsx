@@ -4,6 +4,25 @@ import WebView, { WebViewMessageEvent } from 'react-native-webview';
 
 import { Coordinate } from '../lib/geo';
 import { BusStop } from '../lib/lta';
+import { MapBounds } from '../types';
+
+type MapPayload = {
+  center: Coordinate;
+  routeLines: Coordinate[][];
+  routeServiceNo: string | null;
+  selectedStopCode?: string;
+  stops: BusStop[];
+  theme: 'light' | 'dark';
+  locationFocusRequest: number;
+  bottomInset: number;
+  topInset: number;
+  userLocation: Coordinate | null;
+};
+
+type MapMessage = Partial<MapBounds> & {
+  busStopCode?: string;
+  type: string;
+};
 
 type LeafletMapProps = {
   center: Coordinate;
@@ -16,7 +35,7 @@ type LeafletMapProps = {
   bottomInset: number;
   topInset: number;
   userLocation: Coordinate | null;
-  onBoundsChanged: (bounds: { north: number; south: number; east: number; west: number; zoom: number }) => void;
+  onBoundsChanged: (bounds: MapBounds) => void;
   onStopSelected: (busStopCode: string) => void;
 };
 
@@ -37,7 +56,7 @@ export function LeafletMap({
   const webViewRef = useRef<WebView>(null);
   const html = useMemo(() => buildMapHtml(), []);
 
-  const payload = useMemo(
+  const payload = useMemo<MapPayload>(
     () => ({
       center,
       routeLines,
@@ -55,19 +74,11 @@ export function LeafletMap({
 
   const onMessage = (event: WebViewMessageEvent) => {
     try {
-      const message = JSON.parse(event.nativeEvent.data) as {
-        type: string;
-        busStopCode?: string;
-        north?: number;
-        south?: number;
-        east?: number;
-        west?: number;
-        zoom?: number;
-      };
+      const message = JSON.parse(event.nativeEvent.data) as MapMessage;
       if (message.type === 'stop-selected' && message.busStopCode) {
         onStopSelected(message.busStopCode);
       }
-      if (message.type === 'bounds-changed' && 'north' in message && 'south' in message && 'east' in message && 'west' in message) {
+      if (isBoundsMessage(message)) {
         onBoundsChanged({
           north: Number(message.north),
           south: Number(message.south),
@@ -112,6 +123,17 @@ function WebViewBridge({
   }, [payload, webViewRef]);
 
   return null;
+}
+
+function isBoundsMessage(message: MapMessage): message is MapBounds & { type: string } {
+  return (
+    message.type === 'bounds-changed' &&
+    typeof message.north === 'number' &&
+    typeof message.south === 'number' &&
+    typeof message.east === 'number' &&
+    typeof message.west === 'number' &&
+    typeof message.zoom === 'number'
+  );
 }
 
 function buildMapHtml() {

@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BottomSheet from '@gorhom/bottom-sheet';
-import * as Location from 'expo-location';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -28,17 +27,21 @@ import { LocationButton } from './components/LocationButton';
 import { SearchOverlay } from './components/SearchOverlay';
 import { SettingsOverlay } from './components/SettingsOverlay';
 import { useBusDataSync } from './hooks/useBusDataSync';
+import { useUserLocation } from './hooks/useUserLocation';
+import { errorMessage } from './lib/errors';
 import { compareFavorites, createEmptyService, isFavoriteService } from './lib/favorites';
-import { singaporeCenter, toCoordinate, type Coordinate } from './lib/geo';
+import { singaporeCenter, toCoordinate } from './lib/geo';
 import {
   BusArrivalResponse,
   BusRoute,
   BusStop,
   fetchArrivals,
-  fetchBusRoutesForService
+  fetchBusRoutesForService,
+  isBusStop
 } from './lib/lta';
 import { getServiceRoute, getVisibleStops } from './lib/routeView';
 import { searchBusStops } from './lib/search';
+import { compareServiceNumbers } from './lib/sort';
 import {
   ACCOUNT_KEY_STORAGE,
   BUS_STOPS_STORAGE,
@@ -47,20 +50,27 @@ import {
   LEGACY_BUS_ROUTES_STORAGE,
   THEME_STORAGE,
 } from './lib/storage';
+import { formatClockTime } from './lib/time';
 import { type AppTheme } from './theme';
 import { FavoriteService, LoadState, MapBounds, ThemeChoice } from './types';
 
 const ARRIVAL_REFRESH_MS = 20000;
+const APP_BAR_CONTENT_HEIGHT = 76;
+const SEARCH_BAR_TOP_GAP = 10;
+const SEARCH_BAR_HEIGHT = 66;
+const MAP_TOP_PADDING = 8;
+
+type AppContentProps = {
+  isDark: boolean;
+  themeChoice: ThemeChoice;
+  onThemeChange: (choice: ThemeChoice) => void;
+};
 
 export function AppContent({
   isDark,
   themeChoice,
   onThemeChange,
-}: {
-  isDark: boolean;
-  themeChoice: ThemeChoice;
-  onThemeChange: (choice: ThemeChoice) => void;
-}) {
+}: AppContentProps) {
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
 
@@ -78,9 +88,7 @@ export function AppContent({
   const [arrivalState, setArrivalState] = useState<LoadState>('idle');
   const [favoriteArrivalState, setFavoriteArrivalState] = useState<LoadState>('idle');
   const [routeState, setRouteState] = useState<LoadState>('idle');
-  const [, setLocationState] = useState<LoadState>('idle');
   const [query, setQuery] = useState('');
-  const [userLocation, setUserLocation] = useState<Coordinate | null>(null);
   const [locationFocusRequest, setLocationFocusRequest] = useState(0);
   const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -88,6 +96,12 @@ export function AppContent({
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomSheetRef = useRef<BottomSheet>(null);
   const routeRequestRef = useRef(0);
+  const {
+    locateUser,
+    requestLocationPermission,
+    updateFromLastKnownLocation,
+    userLocation,
+  } = useUserLocation();
   const handleSettingsNeeded = useCallback(() => setShowSettings(true), []);
   const { syncBusData, syncLabel, syncProgress, syncState } = useBusDataSync({
     accountKey,
@@ -96,14 +110,17 @@ export function AppContent({
   });
   const screenHeight = Dimensions.get('window').height;
   const topInset = Platform.OS === 'android' ? NativeStatusBar.currentHeight ?? 0 : 0;
-  const topBarHeight = topInset + 76;
-  const searchTop = topBarHeight + 10;
-  const mapTopInset = searchTop + 66;
+  const topBarHeight = topInset + APP_BAR_CONTENT_HEIGHT;
+  const searchTop = topBarHeight + SEARCH_BAR_TOP_GAP;
+  const mapTopInset = searchTop + SEARCH_BAR_HEIGHT;
 
   const peekHeight = useMemo(() => Math.max(170, screenHeight * 0.22), [screenHeight]);
   const openHeight = useMemo(() => {
     const desiredOpenHeight = screenHeight * 0.6;
-    const maxHeightBelowSearch = Math.max(peekHeight, screenHeight - mapTopInset - 8);
+    const maxHeightBelowSearch = Math.max(
+      peekHeight,
+      screenHeight - mapTopInset - MAP_TOP_PADDING
+    );
     return Math.max(peekHeight, Math.min(desiredOpenHeight, maxHeightBelowSearch));
   }, [mapTopInset, peekHeight, screenHeight]);
   const snapPoints = useMemo(() => [peekHeight, openHeight], [peekHeight, openHeight]);
@@ -128,6 +145,68 @@ export function AppContent({
     };
   }, [openHeight, screenHeight]);
 
+  const closeRoute = useCallback(() => {
+    setSelectedRouteServiceNo(null);
+    setBusRoutes([]);
+    setRouteState('idle');
+    routeRequestRef.current += 1;
+  }, []);
+
+  const selectStop = useCallback(
+    (stop: BusStop) => {
+      setSelectedStop(stop);
+      closeRoute();
+      bottomSheetRef.current?.snapToIndex(1);
+    },
+    [closeRoute]
+  );
+
+  const bootstrap = useCallback(async () => {
+    const [storedKey, storedStops, storedFavorites, storedTheme] = await Promise.all([
+      AsyncStorage.getItem(ACCOUNT_KEY_STORAGE),
+      AsyncStorage.getItem(BUS_STOPS_STORAGE),
+      AsyncStorage.getItem(FAVORITES_STORAGE),
+      AsyncStorage.getItem(THEME_STORAGE),
+      AsyncStorage.removeItem(LEGACY_BUS_ROUTES_STORAGE),
+      AsyncStorage.removeItem(LEGACY_BUS_ROUTES_CACHE_TIME_STORAGE)
+    ]);
+
+    if (isThemeChoice(storedTheme)) {
+      onThemeChange(storedTheme);
+    }
+
+    if (storedKey) {
+      setAccountKey(storedKey);
+      setDraftKey(storedKey);
+    } else {
+      setShowSettings(true);
+    }
+
+    if (storedStops) {
+      try {
+        const parsedStops = JSON.parse(storedStops);
+        if (Array.isArray(parsedStops)) {
+          setBusStops(parsedStops.filter(isBusStop));
+        }
+      } catch {
+        await AsyncStorage.removeItem(BUS_STOPS_STORAGE);
+      }
+    }
+
+    if (storedFavorites) {
+      try {
+        const parsedFavorites = JSON.parse(storedFavorites);
+        if (Array.isArray(parsedFavorites)) {
+          setFavorites(parsedFavorites.filter(isFavoriteService));
+        }
+      } catch {
+        await AsyncStorage.removeItem(FAVORITES_STORAGE);
+      }
+    }
+
+    void locateUser();
+  }, [locateUser, onThemeChange]);
+
   useEffect(() => {
     void bootstrap();
     return () => {
@@ -135,7 +214,7 @@ export function AppContent({
         clearInterval(arrivalTimer.current);
       }
     };
-  }, []);
+  }, [bootstrap]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -161,86 +240,7 @@ export function AppContent({
       return false;
     });
     return () => subscription.remove();
-  }, [selectedRouteServiceNo, selectedStop, showSearch, showSettings]);
-
-  const bootstrap = async () => {
-    const [storedKey, storedStops, storedFavorites, storedTheme] = await Promise.all([
-      AsyncStorage.getItem(ACCOUNT_KEY_STORAGE),
-      AsyncStorage.getItem(BUS_STOPS_STORAGE),
-      AsyncStorage.getItem(FAVORITES_STORAGE),
-      AsyncStorage.getItem(THEME_STORAGE),
-      AsyncStorage.removeItem(LEGACY_BUS_ROUTES_STORAGE),
-      AsyncStorage.removeItem(LEGACY_BUS_ROUTES_CACHE_TIME_STORAGE)
-    ]);
-
-    if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system') {
-      onThemeChange(storedTheme);
-    }
-
-    if (storedKey) {
-      setAccountKey(storedKey);
-      setDraftKey(storedKey);
-    } else {
-      setShowSettings(true);
-    }
-
-    if (storedStops) {
-      try {
-        const parsedStops = JSON.parse(storedStops) as BusStop[];
-        setBusStops(parsedStops);
-      } catch {
-        await AsyncStorage.removeItem(BUS_STOPS_STORAGE);
-      }
-    }
-
-    if (storedFavorites) {
-      try {
-        const parsedFavorites = JSON.parse(storedFavorites) as FavoriteService[];
-        setFavorites(parsedFavorites.filter(isFavoriteService));
-      } catch {
-        await AsyncStorage.removeItem(FAVORITES_STORAGE);
-      }
-    }
-
-    void locateUser();
-  };
-
-  const locateUser = async (options: { alertOnError?: boolean; silent?: boolean } = {}) => {
-    if (!options.silent) {
-      setLocationState('loading');
-    }
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        return null;
-      }
-
-      const lastKnown = await Location.getLastKnownPositionAsync();
-      if (lastKnown) {
-        setUserLocation({
-          latitude: lastKnown.coords.latitude,
-          longitude: lastKnown.coords.longitude,
-        });
-      }
-
-      const position = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const coordinate = {
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-      };
-      setUserLocation(coordinate);
-      return coordinate;
-    } catch (error) {
-      if (options.alertOnError) {
-        Alert.alert('Could not get current location', error instanceof Error ? error.message : 'Unknown error');
-      }
-      return null;
-    } finally {
-      if (!options.silent) {
-        setLocationState('idle');
-      }
-    }
-  };
+  }, [closeRoute, selectedRouteServiceNo, selectedStop, showSearch, showSettings]);
 
   const goToCurrentLocation = async () => {
     setSelectedStop(null);
@@ -250,24 +250,19 @@ export function AppContent({
       setLocationFocusRequest((request) => request + 1);
     }
 
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
+    const hasLocationPermission = await requestLocationPermission();
+    if (!hasLocationPermission) {
       Alert.alert('Location permission needed', 'Allow location access to jump to your current position.');
       return;
     }
 
-    const lastKnown = await Location.getLastKnownPositionAsync();
-    if (lastKnown) {
-      setUserLocation({
-        latitude: lastKnown.coords.latitude,
-        longitude: lastKnown.coords.longitude,
-      });
+    const lastKnownLocation = await updateFromLastKnownLocation();
+    if (lastKnownLocation) {
       setLocationFocusRequest((request) => request + 1);
     }
 
-    void locateUser({ alertOnError: true, silent: true }).then((coordinate) => {
+    void locateUser({ alertOnError: true }).then((coordinate) => {
       if (coordinate) {
-        setUserLocation(coordinate);
         setLocationFocusRequest((request) => request + 1);
       }
     });
@@ -282,11 +277,11 @@ export function AppContent({
     try {
       const response = await fetchArrivals(accountKey.trim(), selectedStop.BusStopCode);
       setArrivals(response);
-      setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setLastUpdated(formatClockTime());
       setArrivalState('idle');
     } catch (error) {
       setArrivalState('error');
-      Alert.alert('Could not load arrivals', error instanceof Error ? error.message : 'Unknown error');
+      Alert.alert('Could not load arrivals', errorMessage(error));
     }
   }, [accountKey, selectedStop]);
 
@@ -307,11 +302,11 @@ export function AppContent({
           return byStopCode;
         }, {})
       );
-      setLastUpdated(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setLastUpdated(formatClockTime());
       setFavoriteArrivalState('idle');
     } catch (error) {
       setFavoriteArrivalState('error');
-      Alert.alert('Could not load favourite arrivals', error instanceof Error ? error.message : 'Unknown error');
+      Alert.alert('Could not load favourite arrivals', errorMessage(error));
     }
   }, [accountKey, favorites]);
 
@@ -373,21 +368,13 @@ export function AppContent({
   const selectStopByCode = (busStopCode: string) => {
     const stop = busStops.find((candidate) => candidate.BusStopCode === busStopCode);
     if (stop) {
-      setSelectedStop(stop);
-      setSelectedRouteServiceNo(null);
-      setBusRoutes([]);
-      setRouteState('idle');
-      routeRequestRef.current += 1;
-      bottomSheetRef.current?.snapToIndex(1);
+      selectStop(stop);
     }
   };
 
   const openFavorites = () => {
     setSelectedStop(null);
-    setSelectedRouteServiceNo(null);
-    setBusRoutes([]);
-    setRouteState('idle');
-    routeRequestRef.current += 1;
+    closeRoute();
     setQuery('');
     setShowSearch(false);
     bottomSheetRef.current?.snapToIndex(1);
@@ -432,19 +419,15 @@ export function AppContent({
 
         setSelectedRouteServiceNo(null);
         setRouteState('error');
-        Alert.alert('Could not load route', error instanceof Error ? error.message : 'Unknown error');
+        Alert.alert('Could not load route', errorMessage(error));
       });
   };
 
-  const closeRoute = () => {
-    setSelectedRouteServiceNo(null);
-    setBusRoutes([]);
-    setRouteState('idle');
-    routeRequestRef.current += 1;
-  };
-
   const searchResults = useMemo(() => searchBusStops(busStops, query), [busStops, query]);
-  const mapStops = useMemo(() => getVisibleStops(busStops, mapBounds, selectedStop), [busStops, mapBounds, selectedStop]);
+  const mapStops = useMemo(
+    () => getVisibleStops(busStops, mapBounds, selectedStop),
+    [busStops, mapBounds, selectedStop]
+  );
   const busStopsByCode = useMemo(
     () =>
       busStops.reduce<Record<string, BusStop>>((byCode, stop) => {
@@ -455,9 +438,7 @@ export function AppContent({
   );
   const selectedServices = useMemo(() => {
     const services = arrivals?.BusStopCode === selectedStop?.BusStopCode ? arrivals?.Services ?? [] : [];
-    return [...services].sort((a, b) =>
-      a.ServiceNo.localeCompare(b.ServiceNo, undefined, { numeric: true })
-    );
+    return [...services].sort((a, b) => compareServiceNumbers(a.ServiceNo, b.ServiceNo));
   }, [arrivals, selectedStop?.BusStopCode]);
   const favoriteItems = useMemo<FavoriteArrivalItem[]>(
     () =>
@@ -590,16 +571,15 @@ export function AppContent({
           }}
           onSelectStop={(stop) => {
             setShowSearch(false);
-            setSelectedStop(stop);
-            setSelectedRouteServiceNo(null);
-            setBusRoutes([]);
-            setRouteState('idle');
-            routeRequestRef.current += 1;
+            selectStop(stop);
             setQuery('');
-            bottomSheetRef.current?.snapToIndex(1);
           }}
         />
       )}
     </View>
   );
+}
+
+function isThemeChoice(value: string | null): value is ThemeChoice {
+  return value === 'light' || value === 'dark' || value === 'system';
 }

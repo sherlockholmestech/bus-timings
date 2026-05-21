@@ -13,6 +13,7 @@ import {
 
 import { BusServiceArrival, BusStop } from '../lib/lta';
 import { ServiceRouteView } from '../lib/routeView';
+import { compareBusStopCodes, compareServiceNumbers } from '../lib/sort';
 import { AppTheme } from '../theme';
 import { FavoriteService, LoadState } from '../types';
 import { ArrivalRow } from './ArrivalRow';
@@ -75,6 +76,39 @@ export function ArrivalsDrawer({
   const colors = theme.colors;
   const e = theme.expressive;
   const favoriteGroups = React.useMemo(() => groupFavoriteItems(favoriteItems), [favoriteItems]);
+  const drawerContent = selectedRouteServiceNo ? (
+    <RouteView
+      routeState={routeState}
+      routeView={routeView}
+      serviceNo={selectedRouteServiceNo}
+      onCloseRoute={onCloseRoute}
+      onSelectFavoriteStop={onSelectFavoriteStop}
+    />
+  ) : selectedStop ? (
+    <SelectedStopArrivals
+      arrivalState={arrivalState}
+      favorites={favorites}
+      lastUpdated={lastUpdated}
+      selectedRouteServiceNo={selectedRouteServiceNo}
+      selectedServices={selectedServices}
+      selectedStop={selectedStop}
+      onRefresh={onRefresh}
+      onSelectServiceRoute={onSelectServiceRoute}
+      onToggleFavorite={onToggleFavorite}
+    />
+  ) : (
+    <FavoriteArrivals
+      favoriteArrivalState={favoriteArrivalState}
+      favoriteGroups={favoriteGroups}
+      favoriteItems={favoriteItems}
+      lastUpdated={lastUpdated}
+      selectedRouteServiceNo={selectedRouteServiceNo}
+      onRefresh={onRefresh}
+      onSelectFavoriteStop={onSelectFavoriteStop}
+      onSelectServiceRoute={onSelectServiceRoute}
+      onToggleFavorite={onToggleFavorite}
+    />
+  );
 
   return (
     <BottomSheet
@@ -100,220 +134,314 @@ export function ArrivalsDrawer({
       }}
     >
       <BottomSheetScrollView contentContainerStyle={{ paddingBottom: e.spacing.xl }}>
-        {selectedRouteServiceNo ? (
-          <RouteView
-            routeState={routeState}
-            routeView={routeView}
-            serviceNo={selectedRouteServiceNo}
-            onCloseRoute={onCloseRoute}
-            onSelectFavoriteStop={onSelectFavoriteStop}
-          />
-        ) : selectedStop ? (
-          <>
-            <View style={{ paddingHorizontal: e.spacing.lg, paddingTop: e.spacing.sm }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  gap: e.spacing.md,
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text
-                    variant="labelLarge"
-                    style={{ color: colors.primary, fontWeight: '900' }}
-                  >
-                    {selectedStop.BusStopCode}
-                  </Text>
-                  <Text
-                    variant="headlineSmall"
-                    numberOfLines={2}
-                    style={{ color: colors.onSurface, fontWeight: '900', lineHeight: 30, marginTop: 2 }}
-                  >
-                    {selectedStop.Description}
-                  </Text>
-                  <Text
-                    variant="bodyMedium"
-                    style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
-                  >
-                    {selectedStop.RoadName}
-                  </Text>
-                </View>
-                <IconButton
-                  icon={() =>
-                    arrivalState === 'loading' ? (
-                      <ActivityIndicator color={colors.onSurface} size={18} />
-                    ) : (
-                      <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
-                    )
-                  }
-                  mode="outlined"
-                  onPress={onRefresh}
-                />
-              </View>
-              <Text
-                variant="bodySmall"
-                style={{
-                  color: colors.onSurfaceVariant,
-                  marginTop: e.spacing.md,
-                  marginBottom: e.spacing.sm,
-                }}
-              >
-                {lastUpdated ? `Updated ${lastUpdated}` : 'Refreshes every 20 seconds'}
-              </Text>
-            </View>
-            <Divider />
-            {selectedServices.length === 0 ? (
-              <Text
-                variant="bodyMedium"
-                style={{
-                  color: colors.onSurfaceVariant,
-                  textAlign: 'center',
-                  marginTop: e.spacing.xl,
-                }}
-              >
-                No arrivals returned for this stop right now.
-              </Text>
-            ) : (
-              selectedServices.map((service) => (
-                <ArrivalRow
-                  key={service.ServiceNo}
-                  service={service}
-                  isRouteSelected={selectedRouteServiceNo === service.ServiceNo}
-                  onSelectServiceRoute={() => onSelectServiceRoute(service.ServiceNo)}
-                  isFavorite={favorites.some(
-                    (favorite) =>
-                      favorite.busStopCode === selectedStop.BusStopCode &&
-                      favorite.serviceNo === service.ServiceNo
-                  )}
-                  onToggleFavorite={() =>
-                    onToggleFavorite({
-                      busStopCode: selectedStop.BusStopCode,
-                      serviceNo: service.ServiceNo,
-                    })
-                  }
-                />
-              ))
-            )}
-          </>
-        ) : (
-          <>
-            <View style={{ paddingHorizontal: e.spacing.lg, paddingTop: e.spacing.sm }}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  gap: e.spacing.md,
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text
-                    variant="headlineSmall"
-                    style={{ color: colors.onSurface, fontWeight: '900', lineHeight: 30 }}
-                  >
-                    Favourites
-                  </Text>
-                  <Text
-                    variant="bodyMedium"
-                    style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
-                  >
-                    Star services at a stop to keep them here.
-                  </Text>
-                </View>
-                <IconButton
-                  icon={() =>
-                    favoriteArrivalState === 'loading' ? (
-                      <ActivityIndicator color={colors.onSurface} size={18} />
-                    ) : (
-                      <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
-                    )
-                  }
-                  mode="outlined"
-                  onPress={onRefresh}
-                />
-              </View>
-              <Text
-                variant="bodySmall"
-                style={{
-                  color: colors.onSurfaceVariant,
-                  marginTop: e.spacing.md,
-                  marginBottom: e.spacing.sm,
-                }}
-              >
-                {lastUpdated ? `Updated ${lastUpdated}` : 'Refreshes every 20 seconds'}
-              </Text>
-            </View>
-            <Divider />
-            {favoriteItems.length === 0 ? (
-              <View style={{ alignItems: 'center', padding: e.spacing.xl, marginTop: e.spacing.md }}>
-                <Star color={colors.onSurfaceVariant} size={28} strokeWidth={2} />
-                <Text
-                  variant="titleMedium"
-                  style={{ color: colors.onSurface, fontWeight: '900', marginTop: e.spacing.md, marginBottom: e.spacing.sm }}
-                >
-                  No favourites yet
-                </Text>
-                <Text
-                  variant="bodyMedium"
-                  style={{ color: colors.onSurfaceVariant, textAlign: 'center' }}
-                >
-                  Search for a bus stop or tap a marker on the map, then star the services you use often.
-                </Text>
-              </View>
-            ) : favoriteGroups.map((group) => (
-              <View key={group.busStopCode}>
-                <View
-                  style={{
-                    backgroundColor: colors.surface,
-                    borderBottomColor: colors.outlineVariant,
-                    borderBottomWidth: StyleSheet.hairlineWidth,
-                    paddingHorizontal: e.spacing.lg,
-                    paddingTop: e.spacing.md,
-                    paddingBottom: e.spacing.sm,
-                  }}
-                >
-                  <Text
-                    variant="labelLarge"
-                    onPress={() => onSelectFavoriteStop(group.busStopCode)}
-                    style={{ color: colors.primary, fontWeight: '900' }}
-                  >
-                    {group.busStopCode}
-                    {group.stop ? ` · ${group.stop.Description}` : ''}
-                  </Text>
-                  {group.stop && (
-                    <Text
-                      variant="bodySmall"
-                      numberOfLines={1}
-                      style={{ color: colors.onSurfaceVariant, marginTop: 1 }}
-                    >
-                      {group.stop.RoadName}
-                    </Text>
-                  )}
-                </View>
-                {group.items.map((item) => (
-                  <ArrivalRow
-                    key={`${item.busStopCode}:${item.serviceNo}`}
-                    service={item.service}
-                    isRouteSelected={selectedRouteServiceNo === item.serviceNo}
-                    onSelectServiceRoute={() => onSelectServiceRoute(item.serviceNo)}
-                    isFavorite
-                    onToggleFavorite={() =>
-                      onToggleFavorite({
-                        busStopCode: item.busStopCode,
-                        serviceNo: item.serviceNo,
-                      })
-                    }
-                  />
-                ))}
-              </View>
-            ))
-          }
-          </>
-        )}
+        {drawerContent}
       </BottomSheetScrollView>
     </BottomSheet>
+  );
+}
+
+function SelectedStopArrivals({
+  arrivalState,
+  favorites,
+  lastUpdated,
+  selectedRouteServiceNo,
+  selectedServices,
+  selectedStop,
+  onRefresh,
+  onSelectServiceRoute,
+  onToggleFavorite,
+}: {
+  arrivalState: LoadState;
+  favorites: FavoriteService[];
+  lastUpdated: string | null;
+  selectedRouteServiceNo: string | null;
+  selectedServices: BusServiceArrival[];
+  selectedStop: BusStop;
+  onRefresh: () => void;
+  onSelectServiceRoute: (serviceNo: string) => void;
+  onToggleFavorite: (favorite: FavoriteService) => void;
+}) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
+
+  return (
+    <>
+      <DrawerHeader
+        eyebrow={selectedStop.BusStopCode}
+        title={selectedStop.Description}
+        subtitle={selectedStop.RoadName}
+        isRefreshing={arrivalState === 'loading'}
+        lastUpdated={lastUpdated}
+        onRefresh={onRefresh}
+      />
+      <Divider />
+      {selectedServices.length === 0 ? (
+        <Text
+          variant="bodyMedium"
+          style={{
+            color: colors.onSurfaceVariant,
+            textAlign: 'center',
+            marginTop: e.spacing.xl,
+          }}
+        >
+          No arrivals returned for this stop right now.
+        </Text>
+      ) : (
+        selectedServices.map((service) => (
+          <ArrivalRow
+            key={service.ServiceNo}
+            service={service}
+            isRouteSelected={selectedRouteServiceNo === service.ServiceNo}
+            isFavorite={favorites.some(
+              (favorite) =>
+                favorite.busStopCode === selectedStop.BusStopCode &&
+                favorite.serviceNo === service.ServiceNo
+            )}
+            onSelectServiceRoute={() => onSelectServiceRoute(service.ServiceNo)}
+            onToggleFavorite={() =>
+              onToggleFavorite({
+                busStopCode: selectedStop.BusStopCode,
+                serviceNo: service.ServiceNo,
+              })
+            }
+          />
+        ))
+      )}
+    </>
+  );
+}
+
+function FavoriteArrivals({
+  favoriteArrivalState,
+  favoriteGroups,
+  favoriteItems,
+  lastUpdated,
+  selectedRouteServiceNo,
+  onRefresh,
+  onSelectFavoriteStop,
+  onSelectServiceRoute,
+  onToggleFavorite,
+}: {
+  favoriteArrivalState: LoadState;
+  favoriteGroups: FavoriteArrivalGroup[];
+  favoriteItems: FavoriteArrivalItem[];
+  lastUpdated: string | null;
+  selectedRouteServiceNo: string | null;
+  onRefresh: () => void;
+  onSelectFavoriteStop: (busStopCode: string) => void;
+  onSelectServiceRoute: (serviceNo: string) => void;
+  onToggleFavorite: (favorite: FavoriteService) => void;
+}) {
+  return (
+    <>
+      <DrawerHeader
+        title="Favourites"
+        subtitle="Star services at a stop to keep them here."
+        isRefreshing={favoriteArrivalState === 'loading'}
+        lastUpdated={lastUpdated}
+        onRefresh={onRefresh}
+      />
+      <Divider />
+      {favoriteItems.length === 0 ? (
+        <EmptyFavorites />
+      ) : (
+        favoriteGroups.map((group) => (
+          <FavoriteStopGroup
+            key={group.busStopCode}
+            group={group}
+            selectedRouteServiceNo={selectedRouteServiceNo}
+            onSelectFavoriteStop={onSelectFavoriteStop}
+            onSelectServiceRoute={onSelectServiceRoute}
+            onToggleFavorite={onToggleFavorite}
+          />
+        ))
+      )}
+    </>
+  );
+}
+
+function DrawerHeader({
+  eyebrow,
+  title,
+  subtitle,
+  isRefreshing,
+  lastUpdated,
+  onRefresh,
+}: {
+  eyebrow?: string;
+  title: string;
+  subtitle: string;
+  isRefreshing: boolean;
+  lastUpdated: string | null;
+  onRefresh: () => void;
+}) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
+
+  return (
+    <View style={{ paddingHorizontal: e.spacing.lg, paddingTop: e.spacing.sm }}>
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: e.spacing.md,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          {eyebrow && (
+            <Text variant="labelLarge" style={{ color: colors.primary, fontWeight: '900' }}>
+              {eyebrow}
+            </Text>
+          )}
+          <Text
+            variant="headlineSmall"
+            numberOfLines={2}
+            style={{ color: colors.onSurface, fontWeight: '900', lineHeight: 30, marginTop: 2 }}
+          >
+            {title}
+          </Text>
+          <Text
+            variant="bodyMedium"
+            style={{ color: colors.onSurfaceVariant, marginTop: 2 }}
+          >
+            {subtitle}
+          </Text>
+        </View>
+        <RefreshButton isRefreshing={isRefreshing} onPress={onRefresh} />
+      </View>
+      <Text
+        variant="bodySmall"
+        style={{
+          color: colors.onSurfaceVariant,
+          marginTop: e.spacing.md,
+          marginBottom: e.spacing.sm,
+        }}
+      >
+        {lastUpdated ? `Updated ${lastUpdated}` : 'Refreshes every 20 seconds'}
+      </Text>
+    </View>
+  );
+}
+
+function RefreshButton({
+  isRefreshing,
+  onPress,
+}: {
+  isRefreshing: boolean;
+  onPress: () => void;
+}) {
+  const colors = useTheme<AppTheme>().colors;
+
+  return (
+    <IconButton
+      icon={() =>
+        isRefreshing ? (
+          <ActivityIndicator color={colors.onSurface} size={18} />
+        ) : (
+          <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
+        )
+      }
+      mode="outlined"
+      onPress={onPress}
+    />
+  );
+}
+
+function EmptyFavorites() {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
+
+  return (
+    <View style={{ alignItems: 'center', padding: e.spacing.xl, marginTop: e.spacing.md }}>
+      <Star color={colors.onSurfaceVariant} size={28} strokeWidth={2} />
+      <Text
+        variant="titleMedium"
+        style={{
+          color: colors.onSurface,
+          fontWeight: '900',
+          marginTop: e.spacing.md,
+          marginBottom: e.spacing.sm,
+        }}
+      >
+        No favourites yet
+      </Text>
+      <Text
+        variant="bodyMedium"
+        style={{ color: colors.onSurfaceVariant, textAlign: 'center' }}
+      >
+        Search for a bus stop or tap a marker on the map, then star the services you use often.
+      </Text>
+    </View>
+  );
+}
+
+function FavoriteStopGroup({
+  group,
+  selectedRouteServiceNo,
+  onSelectFavoriteStop,
+  onSelectServiceRoute,
+  onToggleFavorite,
+}: {
+  group: FavoriteArrivalGroup;
+  selectedRouteServiceNo: string | null;
+  onSelectFavoriteStop: (busStopCode: string) => void;
+  onSelectServiceRoute: (serviceNo: string) => void;
+  onToggleFavorite: (favorite: FavoriteService) => void;
+}) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
+
+  return (
+    <View>
+      <View
+        style={{
+          backgroundColor: colors.surface,
+          borderBottomColor: colors.outlineVariant,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          paddingHorizontal: e.spacing.lg,
+          paddingTop: e.spacing.md,
+          paddingBottom: e.spacing.sm,
+        }}
+      >
+        <Text
+          variant="labelLarge"
+          onPress={() => onSelectFavoriteStop(group.busStopCode)}
+          style={{ color: colors.primary, fontWeight: '900' }}
+        >
+          {group.busStopCode}
+          {group.stop ? ` · ${group.stop.Description}` : ''}
+        </Text>
+        {group.stop && (
+          <Text
+            variant="bodySmall"
+            numberOfLines={1}
+            style={{ color: colors.onSurfaceVariant, marginTop: 1 }}
+          >
+            {group.stop.RoadName}
+          </Text>
+        )}
+      </View>
+      {group.items.map((item) => (
+        <ArrivalRow
+          key={`${item.busStopCode}:${item.serviceNo}`}
+          service={item.service}
+          isRouteSelected={selectedRouteServiceNo === item.serviceNo}
+          isFavorite
+          onSelectServiceRoute={() => onSelectServiceRoute(item.serviceNo)}
+          onToggleFavorite={() =>
+            onToggleFavorite({
+              busStopCode: item.busStopCode,
+              serviceNo: item.serviceNo,
+            })
+          }
+        />
+      ))}
+    </View>
   );
 }
 
@@ -463,11 +591,9 @@ function groupFavoriteItems(items: FavoriteArrivalItem[]) {
   }
 
   return [...groupsByStop.values()]
-    .sort((a, b) => a.busStopCode.localeCompare(b.busStopCode, undefined, { numeric: true }))
+    .sort((a, b) => compareBusStopCodes(a.busStopCode, b.busStopCode))
     .map((group) => ({
       ...group,
-      items: [...group.items].sort((a, b) =>
-        a.serviceNo.localeCompare(b.serviceNo, undefined, { numeric: true })
-      ),
+      items: [...group.items].sort((a, b) => compareServiceNumbers(a.serviceNo, b.serviceNo)),
     }));
 }
