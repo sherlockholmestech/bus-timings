@@ -1,5 +1,10 @@
 name: Android CI
 
+# Run validation on every push and pull request to the main branches, and
+# build/upload a deterministic release APK when a GitHub Release is published.
+# No emulator is started at any point. No LTA AccountKey, signing key, or
+# other runtime secret is required. The only secret used is the implicit
+# GitHub Actions token, and only to upload the release asset.
 on:
   push:
     branches: [master, main]
@@ -8,17 +13,17 @@ on:
   release:
     types: [published]
 
-permissions:
-  contents: write
-
+# Cancel in-progress validation runs for the same ref to save CI minutes, but
+# never cancel a release build once it has started.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'release' }}
 
 jobs:
   validate:
     name: Validate (typecheck + expo check + debug build)
     runs-on: ubuntu-latest
+    # Least-privilege: validation only checks out and reads repository content.
     permissions:
       contents: read
     steps:
@@ -30,6 +35,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -54,14 +60,9 @@ jobs:
       - name: Generate Android project
         env:
           EXPO_NO_TELEMETRY: "1"
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: npx expo prebuild --platform android --no-install --clean
 
       - name: Build debug APK (no emulator)
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           chmod +x android/gradlew
           cd android
@@ -69,9 +70,12 @@ jobs:
 
   release:
     name: Release APK
-    if: github.event_name == 'release'
+    # Only build and upload an APK when a release is actually published.
+    if: github.event_name == 'release' && github.event.action == 'published'
     needs: validate
     runs-on: ubuntu-latest
+    # The release job needs write access to attach the APK to the GitHub
+    # Release; the validation job intentionally does not.
     permissions:
       contents: write
     steps:
@@ -83,6 +87,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -107,20 +112,15 @@ jobs:
       - name: Generate Android project
         env:
           EXPO_NO_TELEMETRY: "1"
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: npx expo prebuild --platform android --no-install --clean
 
       - name: Build release APK
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME }}
-          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           chmod +x android/gradlew
           cd android
           ./gradlew assembleRelease --stacktrace
 
-      - name: Prepare APK artifact
+      - name: Prepare deterministic release asset
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/release/app-release.apk dist/sg-bus-timings-android.apk
@@ -134,7 +134,8 @@ jobs:
           if-no-files-found: error
 
       - name: Upload APK to GitHub release
-        if: github.event_name == 'release'
         env:
+          # The only "secret" used by this workflow is the implicit GitHub
+          # Actions token, which is required to attach the release asset.
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.event.release.tag_name }}" dist/sg-bus-timings-android.apk --clobber
