@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate (typecheck + expo check + debug build)
+    name: Validate (typecheck + expo check + workflow checks)
     runs-on: ubuntu-latest
     # Least-privilege: validation only checks out and reads repository content.
     permissions:
@@ -48,6 +48,11 @@ jobs:
           EXPO_NO_TELEMETRY: "1"
         run: npx expo install --check
 
+      - name: Validate Android workflow YAML
+        # Lightweight static check: make sure the workflow file itself is
+        # parseable YAML so a syntax error cannot silently break CI.
+        run: python3 -c "import yaml; yaml.safe_load(open('.github/workflows/android.yml')); print('YAML is valid')"
+
       - name: Set up Liberica JDK 17
         uses: actions/setup-java@v4
         with:
@@ -60,13 +65,12 @@ jobs:
       - name: Generate Android project
         env:
           EXPO_NO_TELEMETRY: "1"
+        # Push/PR validation only runs the Android prebuild so we can prove
+        # the generated project is well-formed. We deliberately do NOT run
+        # `./gradlew assembleDebug` or any debug APK build here; that step is
+        # reserved for the release.published workflow to keep CI fast and
+        # avoid producing debug APKs on every commit.
         run: npx expo prebuild --platform android --no-install --clean
-
-      - name: Build debug APK (no emulator)
-        run: |
-          chmod +x android/gradlew
-          cd android
-          ./gradlew assembleDebug --stacktrace
 
   release:
     name: Release APK

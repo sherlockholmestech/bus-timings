@@ -12,9 +12,15 @@ JDK_VERSION="17.0.13+12"
 JDK_TARBALL_NAME="bellsoft-jdk${JDK_VERSION}-linux-amd64.tar.gz"
 JDK_URL="https://github.com/bell-sw/Liberica/releases/download/${JDK_VERSION//+/%2B}/${JDK_TARBALL_NAME}"
 JDK_SHA1SUMS_URL="https://github.com/bell-sw/Liberica/releases/download/${JDK_VERSION//+/%2B}/sha1sum.txt"
+# The cached JDK at ./tmp/jdk-17 must match these values before we trust it
+# for a Gradle build. The CRaC variant of Liberica 17 published a separate
+# `*-crac.tar.gz` tarball; do not accept that or any other major version.
 EXPECTED_VENDOR="Liberica"
+EXPECTED_VENDOR_ALIAS="BellSoft"
 EXPECTED_MAJOR="17"
-EXPECTED_VERSION_PREFIX="17.0."
+EXPECTED_JAVA_VERSION="17.0.13"
+EXPECTED_RUNTIME_VERSION="17.0.13+12"
+CRAC_MODULE_MARKER="jdk.internal.crac"
 
 usage() {
   cat <<USAGE
@@ -43,22 +49,28 @@ case "$VARIANT" in
     ;;
 esac
 
-# Always reject a cached JDK that does not match the expected vendor/major.
+# Always reject a cached JDK that does not match the expected vendor/version.
+# The cached JDK must be the standard non-CRaC BellSoft Liberica JDK 17 build
+# pinned by JDK_VERSION above. Any other major version, vendor, or the
+# CRaC-flavored variant is purged so the Gradle build cannot accidentally
+# pick up an incompatible Java toolchain.
 validate_cached_jdk() {
   if [ ! -x "$JDK_DIR/bin/java" ] || [ ! -r "$JDK_DIR/release" ]; then
     return 1
   fi
   local release_file="$JDK_DIR/release"
-  local implementor java_version
+  local implementor java_version runtime_version modules
   implementor="$(grep -E '^IMPLEMENTOR=' "$release_file" | head -n 1 | sed -E 's/^IMPLEMENTOR="?([^"]+)"?$/\1/')"
   java_version="$(grep -E '^JAVA_VERSION=' "$release_file" | head -n 1 | sed -E 's/^JAVA_VERSION="?([^"]+)"?$/\1/')"
-  if [ -z "$implementor" ] || [ -z "$java_version" ]; then
-    echo "Cached JDK at $JDK_DIR is missing IMPLEMENTOR or JAVA_VERSION metadata. Removing."
+  runtime_version="$(grep -E '^JAVA_RUNTIME_VERSION=' "$release_file" | head -n 1 | sed -E 's/^JAVA_RUNTIME_VERSION="?([^"]+)"?$/\1/')"
+  modules="$(grep -E '^MODULES=' "$release_file" | head -n 1 | sed -E 's/^MODULES="?([^"]+)"?$/\1/')"
+  if [ -z "$implementor" ] || [ -z "$java_version" ] || [ -z "$runtime_version" ]; then
+    echo "Cached JDK at $JDK_DIR is missing IMPLEMENTOR, JAVA_VERSION, or JAVA_RUNTIME_VERSION metadata. Removing."
     rm -rf "$JDK_DIR"
     return 1
   fi
-  if ! [[ "$implementor" == *"$EXPECTED_VENDOR"* ]] && ! [[ "$implementor" == "BellSoft" ]]; then
-    echo "Cached JDK vendor mismatch (expected $EXPECTED_VENDOR or BellSoft, got: $implementor). Removing $JDK_DIR."
+  if ! [[ "$implementor" == *"$EXPECTED_VENDOR"* ]] && ! [[ "$implementor" == "$EXPECTED_VENDOR_ALIAS" ]]; then
+    echo "Cached JDK vendor mismatch (expected $EXPECTED_VENDOR or $EXPECTED_VENDOR_ALIAS, got: $implementor). Removing $JDK_DIR."
     rm -rf "$JDK_DIR"
     return 1
   fi
@@ -66,6 +78,24 @@ validate_cached_jdk() {
   major="$(printf '%s' "$java_version" | sed -nE 's/^([0-9]+)\..*/\1/p')"
   if [ "$major" != "$EXPECTED_MAJOR" ]; then
     echo "Cached JDK major version mismatch (expected $EXPECTED_MAJOR, got: $major). Removing $JDK_DIR."
+    rm -rf "$JDK_DIR"
+    return 1
+  fi
+  if [ "$java_version" != "$EXPECTED_JAVA_VERSION" ]; then
+    echo "Cached JDK version mismatch (expected $EXPECTED_JAVA_VERSION, got: $java_version). Removing $JDK_DIR."
+    rm -rf "$JDK_DIR"
+    return 1
+  fi
+  # Strip the trailing "-LTS" suffix (Liberica stamps "-LTS" onto the runtime
+  # version) so we can compare against the pinned JDK_VERSION exactly.
+  local runtime_core="${runtime_version%-LTS}"
+  if [ "$runtime_core" != "$EXPECTED_RUNTIME_VERSION" ]; then
+    echo "Cached JDK runtime version mismatch (expected $EXPECTED_RUNTIME_VERSION, got: $runtime_core). Removing $JDK_DIR."
+    rm -rf "$JDK_DIR"
+    return 1
+  fi
+  if [ -n "$modules" ] && [[ "$modules" == *"$CRAC_MODULE_MARKER"* ]]; then
+    echo "Cached JDK exposes $CRAC_MODULE_MARKER (CRaC variant). Standard non-CRaC build is required; removing $JDK_DIR."
     rm -rf "$JDK_DIR"
     return 1
   fi
