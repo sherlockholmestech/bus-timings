@@ -1,21 +1,20 @@
+import { BottomSheet, BottomSheetScrollView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
+import { RefreshCw, X, Star } from 'lucide-react-native';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { SharedValue } from 'react-native-reanimated';
-import { RefreshCw, X, Star } from 'lucide-react-native';
-import {
-  ActivityIndicator,
-  Divider,
-  IconButton,
-  Text,
-  useTheme
-} from 'react-native-paper';
 
 import { BusServiceArrival, BusStop } from '../lib/lta';
 import { ServiceRouteView } from '../lib/routeView';
 import { compareBusStopCodes, compareServiceNumbers } from '../lib/sort';
 import { AppTheme } from '../theme';
 import { FavoriteService, LoadState } from '../types';
+import {
+  ActivityIndicator,
+  Divider,
+  IconButton,
+  Text,
+} from '../ui';
+import { useTheme } from '../ui/ThemeContext';
 import { ArrivalRow } from './ArrivalRow';
 
 export type FavoriteArrivalItem = FavoriteService & {
@@ -31,8 +30,7 @@ type FavoriteArrivalGroup = {
 
 type ArrivalsDrawerProps = {
   arrivalState: LoadState;
-  animatedPosition: SharedValue<number>;
-  bottomSheetRef: React.RefObject<BottomSheet | null>;
+  bottomSheetRef: React.RefObject<BottomSheetMethods | null>;
   favoriteArrivalState: LoadState;
   favoriteItems: FavoriteArrivalItem[];
   favorites: FavoriteService[];
@@ -43,6 +41,7 @@ type ArrivalsDrawerProps = {
   selectedStop: BusStop | null;
   selectedRouteServiceNo: string | null;
   snapPoints: number[];
+  sheetIndex: number;
   onChange: (index: number) => void;
   onCloseRoute: () => void;
   onSelectServiceRoute: (serviceNo: string) => void;
@@ -53,7 +52,6 @@ type ArrivalsDrawerProps = {
 
 export function ArrivalsDrawer({
   arrivalState,
-  animatedPosition,
   bottomSheetRef,
   favoriteArrivalState,
   favoriteItems,
@@ -65,6 +63,7 @@ export function ArrivalsDrawer({
   selectedStop,
   selectedRouteServiceNo,
   snapPoints,
+  sheetIndex,
   onChange,
   onCloseRoute,
   onSelectServiceRoute,
@@ -113,24 +112,12 @@ export function ArrivalsDrawer({
   return (
     <BottomSheet
       ref={bottomSheetRef}
-      index={1}
-      snapPoints={snapPoints}
+      index={sheetIndex}
+      snapPoints={snapPoints.map((point) => `${point}px`)}
       enableDynamicSizing={false}
-      animatedPosition={animatedPosition}
       onChange={onChange}
       backgroundStyle={{
         backgroundColor: colors.surface,
-      }}
-      handleStyle={{
-        backgroundColor: colors.surface,
-        borderTopLeftRadius: e.radius.extraLarge,
-        borderTopRightRadius: e.radius.extraLarge,
-      }}
-      handleIndicatorStyle={{
-        backgroundColor: colors.outlineVariant,
-        width: 48,
-        height: 5,
-        borderRadius: 8,
       }}
     >
       <BottomSheetScrollView contentContainerStyle={{ paddingBottom: e.spacing.xl }}>
@@ -291,11 +278,11 @@ function DrawerHeader({
         }}
       >
         <View style={{ flex: 1 }}>
-          {eyebrow && (
+          {eyebrow ? (
             <Text variant="labelLarge" style={{ color: colors.primary, fontWeight: '900' }}>
               {eyebrow}
             </Text>
-          )}
+          ) : null}
           <Text
             variant="headlineSmall"
             numberOfLines={2}
@@ -416,7 +403,7 @@ function FavoriteStopGroup({
           {group.busStopCode}
           {group.stop ? ` · ${group.stop.Description}` : ''}
         </Text>
-        {group.stop && (
+        {group.stop ? (
           <Text
             variant="bodySmall"
             numberOfLines={1}
@@ -424,7 +411,7 @@ function FavoriteStopGroup({
           >
             {group.stop.RoadName}
           </Text>
-        )}
+        ) : null}
       </View>
       {group.items.map((item) => (
         <ArrivalRow

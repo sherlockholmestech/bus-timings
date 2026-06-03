@@ -1,9 +1,10 @@
+import { Settings, Star } from 'lucide-react-native';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Settings, Star } from 'lucide-react-native';
-import { Text, useTheme } from 'react-native-paper';
 
 import { AppTheme } from '../theme';
+import { Text } from '../ui';
+import { useTheme } from '../ui/ThemeContext';
 
 type AppHeaderProps = {
   topBarHeight: number;

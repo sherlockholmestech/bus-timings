@@ -1,5 +1,8 @@
 import React from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+
+import { AppTheme } from '../theme';
+import { LoadState, ThemeChoice } from '../types';
 import {
   ActivityIndicator,
   Appbar,
@@ -10,11 +13,8 @@ import {
   Surface,
   Text,
   TextInput,
-  useTheme
-} from 'react-native-paper';
-
-import { AppTheme } from '../theme';
-import { LoadState, ThemeChoice } from '../types';
+} from '../ui';
+import { useTheme } from '../ui/ThemeContext';
 
 type SettingsOverlayProps = {
   busStopState: LoadState;
@@ -62,7 +62,7 @@ export function SettingsOverlay({
         }}
         statusBarHeight={0}
       >
-        <Appbar.BackAction onPress={onClose} />
+        <Appbar.BackAction onPress={onClose} accessibilityLabel="Close settings" />
         <Appbar.Content title="Settings" titleStyle={{ fontWeight: '800' }} />
       </Appbar.Header>
       <ScrollView
@@ -126,8 +126,8 @@ export function SettingsOverlay({
             'Sync bus stops'
           )}
         </Button>
-        {busStopState === 'loading' && (
-          <>
+        {busStopState === 'loading' ? (
+          <View>
             <ProgressBar
               progress={syncProgress}
               color={colors.primary}
@@ -139,8 +139,8 @@ export function SettingsOverlay({
             >
               {syncLabel ?? 'Syncing...'}
             </Text>
-          </>
-        )}
+          </View>
+        ) : null}
 
         <Divider style={{ marginVertical: e.spacing.xl }} />
 

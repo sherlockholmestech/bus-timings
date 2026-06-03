@@ -1,16 +1,16 @@
 import React from 'react';
 import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
+
+import { BusStop } from '../lib/lta';
+import { AppTheme } from '../theme';
 import {
   Appbar,
   List,
   Searchbar,
   Surface,
   Text,
-  useTheme
-} from 'react-native-paper';
-
-import { BusStop } from '../lib/lta';
-import { AppTheme } from '../theme';
+} from '../ui';
+import { useTheme } from '../ui/ThemeContext';
 
 type SearchOverlayProps = {
   query: string;
@@ -58,7 +58,6 @@ export function SearchOverlay({
           placeholder="Search stops"
           onChangeText={onChangeQuery}
           value={query}
-          autoFocus
           style={{
             flex: 1,
             backgroundColor: colors.surface,
@@ -68,7 +67,9 @@ export function SearchOverlay({
           iconColor={colors.onSurfaceVariant}
           placeholderTextColor={colors.onSurfaceVariant}
         />
-        <Appbar.Action icon="close" onPress={close} />
+        <Appbar.Action accessibilityLabel="Close search" onPress={close}>
+          <Text style={{ color: colors.onSurface, fontSize: 18, fontWeight: '700' }}>×</Text>
+        </Appbar.Action>
       </Appbar.Header>
       <ScrollView
         contentContainerStyle={{

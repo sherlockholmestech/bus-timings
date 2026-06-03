@@ -1,7 +1,50 @@
-import { MD3LightTheme, MD3DarkTheme, configureFonts } from 'react-native-paper';
-import type { MD3Theme } from 'react-native-paper';
+export type ThemeElevation = {
+  level0: string;
+  level1: string;
+  level2: string;
+  level3: string;
+  level4: string;
+  level5: string;
+};
 
-export type AppTheme = MD3Theme & {
+export type ThemeColors = {
+  primary: string;
+  onPrimary: string;
+  primaryContainer: string;
+  onPrimaryContainer: string;
+  secondary: string;
+  onSecondary: string;
+  secondaryContainer: string;
+  onSecondaryContainer: string;
+  tertiary: string;
+  onTertiary: string;
+  tertiaryContainer: string;
+  onTertiaryContainer: string;
+  error: string;
+  onError: string;
+  errorContainer: string;
+  onErrorContainer: string;
+  background: string;
+  onBackground: string;
+  surface: string;
+  onSurface: string;
+  surfaceVariant: string;
+  onSurfaceVariant: string;
+  outline: string;
+  outlineVariant: string;
+  shadow: string;
+  scrim: string;
+  inverseSurface: string;
+  inverseOnSurface: string;
+  inversePrimary: string;
+  elevation: ThemeElevation;
+  surfaceDisabled: string;
+  onSurfaceDisabled: string;
+  backdrop: string;
+};
+
+export type AppTheme = {
+  colors: ThemeColors;
   expressive: {
     radius: {
       small: number;
@@ -19,8 +62,6 @@ export type AppTheme = MD3Theme & {
     };
   };
 };
-
-const fontConfig = configureFonts({ config: { fontFamily: 'sans-serif' } });
 
 const expressive: AppTheme['expressive'] = {
   radius: {
@@ -77,11 +118,26 @@ const flexokiDark = {
   red2: '#AF3029',
 };
 
+const lightElevation: ThemeElevation = {
+  level0: 'transparent',
+  level1: flexokiLight.bg2,
+  level2: flexokiLight.ui,
+  level3: flexokiLight.ui2,
+  level4: flexokiLight.ui3,
+  level5: flexokiLight.ui3,
+};
+
+const darkElevation: ThemeElevation = {
+  level0: 'transparent',
+  level1: flexokiDark.bg2,
+  level2: flexokiDark.ui,
+  level3: flexokiDark.ui2,
+  level4: flexokiDark.ui3,
+  level5: flexokiDark.ui3,
+};
+
 export const lightTheme: AppTheme = {
-  ...MD3LightTheme,
-  fonts: fontConfig,
   colors: {
-    ...MD3LightTheme.colors,
     primary: flexokiLight.blue,
     onPrimary: flexokiLight.bg,
     primaryContainer: '#DCEBFF',
@@ -111,14 +167,7 @@ export const lightTheme: AppTheme = {
     inverseSurface: flexokiLight.tx,
     inverseOnSurface: flexokiLight.bg,
     inversePrimary: flexokiLight.blue2,
-    elevation: {
-      level0: 'transparent',
-      level1: flexokiLight.bg2,
-      level2: flexokiLight.ui,
-      level3: flexokiLight.ui2,
-      level4: flexokiLight.ui3,
-      level5: flexokiLight.ui3,
-    },
+    elevation: lightElevation,
     surfaceDisabled: 'rgba(16, 15, 15, 0.12)',
     onSurfaceDisabled: 'rgba(16, 15, 15, 0.38)',
     backdrop: 'rgba(16, 15, 15, 0.42)',
@@ -127,10 +176,7 @@ export const lightTheme: AppTheme = {
 };
 
 export const darkTheme: AppTheme = {
-  ...MD3DarkTheme,
-  fonts: fontConfig,
   colors: {
-    ...MD3DarkTheme.colors,
     primary: flexokiDark.blue,
     onPrimary: flexokiDark.bg,
     primaryContainer: flexokiDark.blue2,
@@ -160,14 +206,7 @@ export const darkTheme: AppTheme = {
     inverseSurface: flexokiDark.tx,
     inverseOnSurface: flexokiDark.bg,
     inversePrimary: flexokiDark.blue2,
-    elevation: {
-      level0: 'transparent',
-      level1: flexokiDark.bg2,
-      level2: flexokiDark.ui,
-      level3: flexokiDark.ui2,
-      level4: flexokiDark.ui3,
-      level5: flexokiDark.ui3,
-    },
+    elevation: darkElevation,
     surfaceDisabled: 'rgba(206, 205, 195, 0.12)',
     onSurfaceDisabled: 'rgba(206, 205, 195, 0.38)',
     backdrop: 'rgba(16, 15, 15, 0.68)',

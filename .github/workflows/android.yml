@@ -1,16 +1,26 @@
 name: Android CI
 
 on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
   release:
     types: [published]
 
 permissions:
   contents: write
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
+jobs:
+  validate:
+    name: Validate (typecheck + expo check + debug build)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,19 +37,84 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Generate Android project
-        run: npx expo prebuild --platform android --no-install
+      - name: Expo dependency check
+        env:
+          EXPO_NO_TELEMETRY: "1"
+        run: npx expo install --check
 
-      - name: Set up JDK 17
+      - name: Set up Liberica JDK 17
         uses: actions/setup-java@v4
         with:
+          distribution: liberica
           java-version: "17"
-          distribution: temurin
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Generate Android project
+        env:
+          EXPO_NO_TELEMETRY: "1"
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        run: npx expo prebuild --platform android --no-install --clean
+
+      - name: Build debug APK (no emulator)
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        run: |
+          chmod +x android/gradlew
+          cd android
+          ./gradlew assembleDebug --stacktrace
+
+  release:
+    name: Release APK
+    if: github.event_name == 'release'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Expo dependency check
+        env:
+          EXPO_NO_TELEMETRY: "1"
+        run: npx expo install --check
+
+      - name: Set up Liberica JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: liberica
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generate Android project
+        env:
+          EXPO_NO_TELEMETRY: "1"
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
+        run: npx expo prebuild --platform android --no-install --clean
+
       - name: Build release APK
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           chmod +x android/gradlew
           cd android
@@ -49,6 +124,7 @@ jobs:
         run: |
           mkdir -p dist
           cp android/app/build/outputs/apk/release/app-release.apk dist/sg-bus-timings-android.apk
+          ls -la dist/
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4

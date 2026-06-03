@@ -1,23 +1,29 @@
-import React from 'react';
-import { Pressable, StyleSheet } from 'react-native';
 import { LocateFixed } from 'lucide-react-native';
-import Animated, { AnimatedStyle } from 'react-native-reanimated';
-import { useTheme } from 'react-native-paper';
+import React from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppTheme } from '../theme';
+import { useTheme } from '../ui/ThemeContext';
 
 type LocationButtonProps = {
-  animatedStyle: AnimatedStyle;
+  bottom: number;
   onPress: () => void;
 };
 
-export function LocationButton({ animatedStyle, onPress }: LocationButtonProps) {
+export function LocationButton({ bottom, onPress }: LocationButtonProps) {
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
   const e = theme.expressive;
 
   return (
-    <Animated.View style={[styles.layer, animatedStyle]}>
+    <View
+      style={[
+        styles.layer,
+        {
+          bottom,
+        },
+      ]}
+    >
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Go to current location"
@@ -33,7 +39,7 @@ export function LocationButton({ animatedStyle, onPress }: LocationButtonProps) 
       >
         <LocateFixed color="#FFFCF0" size={21} strokeWidth={2.3} />
       </Pressable>
-    </Animated.View>
+    </View>
   );
 }
 
@@ -41,7 +47,6 @@ const styles = StyleSheet.create({
   layer: {
     left: 16,
     position: 'absolute',
-    top: 0,
     zIndex: 10,
   },
   button: {

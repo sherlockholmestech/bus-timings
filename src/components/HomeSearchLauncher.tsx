@@ -1,9 +1,10 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Searchbar, Surface, useTheme } from 'react-native-paper';
 
 import { BusStop } from '../lib/lta';
 import { AppTheme } from '../theme';
+import { Searchbar, Surface } from '../ui';
+import { useTheme } from '../ui/ThemeContext';
 
 type HomeSearchLauncherProps = {
   selectedStop: BusStop | null;

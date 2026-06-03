@@ -1,10 +1,11 @@
+import { Accessibility, Star } from 'lucide-react-native';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import { Accessibility, Star } from 'lucide-react-native';
-import { IconButton, Text, useTheme } from 'react-native-paper';
 
 import { BusArrival, BusServiceArrival, minutesUntilArrival } from '../lib/lta';
 import { AppTheme } from '../theme';
+import { IconButton, Text } from '../ui';
+import { useTheme } from '../ui/ThemeContext';
 
 const CROWD_COLORS: Record<string, string> = {
   SEA: '#879A39',
@@ -108,7 +109,7 @@ export function ArrivalRow({
           </View>
         )}
       </View>
-      {onToggleFavorite && (
+      {onToggleFavorite ? (
         <IconButton
           accessibilityLabel={isFavorite ? `Unstar service ${service.ServiceNo}` : `Star service ${service.ServiceNo}`}
           icon={() => (
@@ -121,7 +122,7 @@ export function ArrivalRow({
           )}
           onPress={onToggleFavorite}
         />
-      )}
+      ) : null}
     </View>
   );
 }
@@ -167,9 +168,9 @@ function BusTime({ bus }: { bus: BusArrival }) {
             backgroundColor: crowdColor,
           }}
         />
-        {bus.Feature === 'WAB' && (
+        {bus.Feature === 'WAB' ? (
           <Accessibility color={colors.primary} size={14} strokeWidth={2.4} />
-        )}
+        ) : null}
       </View>
     </View>
   );

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import BottomSheet from '@gorhom/bottom-sheet';
+import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -10,17 +10,9 @@ import {
   StatusBar as NativeStatusBar,
   View
 } from 'react-native';
-import {
-  Extrapolation,
-  interpolate,
-  useAnimatedStyle,
-  useSharedValue
-} from 'react-native-reanimated';
-import { useTheme } from 'react-native-paper';
 
 import { AppHeader } from './components/AppHeader';
-import { ArrivalsDrawer } from './components/ArrivalsDrawer';
-import type { FavoriteArrivalItem } from './components/ArrivalsDrawer';
+import { ArrivalsDrawer, FavoriteArrivalItem } from './components/ArrivalsDrawer';
 import { HomeSearchLauncher } from './components/HomeSearchLauncher';
 import { LeafletMap } from './components/LeafletMap';
 import { LocationButton } from './components/LocationButton';
@@ -51,7 +43,8 @@ import {
   THEME_STORAGE,
 } from './lib/storage';
 import { formatClockTime } from './lib/time';
-import { type AppTheme } from './theme';
+import { useTheme } from './ui/ThemeContext';
+import { AppTheme } from './theme';
 import { FavoriteService, LoadState, MapBounds, ThemeChoice } from './types';
 
 const ARRIVAL_REFRESH_MS = 20000;
@@ -94,7 +87,7 @@ export function AppContent({
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const bottomSheetRef = useRef<BottomSheet>(null);
+  const bottomSheetRef = useRef<BottomSheetMethods | null>(null);
   const routeRequestRef = useRef(0);
   const {
     locateUser,
@@ -125,25 +118,8 @@ export function AppContent({
   }, [mapTopInset, peekHeight, screenHeight]);
   const snapPoints = useMemo(() => [peekHeight, openHeight], [peekHeight, openHeight]);
   const [sheetIndex, setSheetIndex] = useState(1);
-  const sheetPosition = useSharedValue(screenHeight - openHeight);
-  const locationButtonStyle = useAnimatedStyle(() => {
-    const expandedTop = screenHeight - openHeight;
-    const visibleProgress = interpolate(
-      sheetPosition.value,
-      [expandedTop, expandedTop + 28],
-      [0, 1],
-      Extrapolation.CLAMP
-    );
-
-    return {
-      opacity: visibleProgress,
-      transform: [
-        {
-          translateY: sheetPosition.value - 64,
-        },
-      ],
-    };
-  }, [openHeight, screenHeight]);
+  const currentSheetPosition = sheetIndex === 0 ? peekHeight : openHeight;
+  const locationButtonBottom = currentSheetPosition + 16;
 
   const closeRoute = useCallback(() => {
     setSelectedRouteServiceNo(null);
@@ -462,11 +438,11 @@ export function AppContent({
   const visibleMapStops = selectedRouteServiceNo ? selectedRoute.stops : mapStops;
 
   const mapCenter = selectedStop ? toCoordinate(selectedStop) : userLocation ?? singaporeCenter;
-  const bottomInset = sheetIndex === 0 ? peekHeight : openHeight;
+  const bottomInset = currentSheetPosition;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} />
+      <StatusBar style={isDark ? 'light' : 'dark'} />
 
       <AppHeader
         topBarHeight={topBarHeight}
@@ -499,7 +475,7 @@ export function AppContent({
       />
 
       <LocationButton
-        animatedStyle={locationButtonStyle}
+        bottom={locationButtonBottom}
         onPress={() => {
           void goToCurrentLocation();
         }}
@@ -507,7 +483,6 @@ export function AppContent({
 
       <ArrivalsDrawer
         arrivalState={arrivalState}
-        animatedPosition={sheetPosition}
         bottomSheetRef={bottomSheetRef}
         favoriteArrivalState={favoriteArrivalState}
         favoriteItems={favoriteItems}
@@ -519,6 +494,7 @@ export function AppContent({
         selectedStop={selectedStop}
         selectedRouteServiceNo={selectedRouteServiceNo}
         snapPoints={snapPoints}
+        sheetIndex={sheetIndex}
         onChange={setSheetIndex}
         onCloseRoute={closeRoute}
         onSelectServiceRoute={selectServiceRoute}
