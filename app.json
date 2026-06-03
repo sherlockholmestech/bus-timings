@@ -9,6 +9,9 @@
     "assetBundlePatterns": [
       "**/*"
     ],
+    "platforms": [
+      "android"
+    ],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
