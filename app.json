@@ -9,12 +9,6 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "ios": {
-      "supportsTablet": true,
-      "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Show nearby Singapore bus stops on the map."
-      }
-    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
@@ -25,9 +19,6 @@
         "ACCESS_FINE_LOCATION"
       ],
       "package": "com.sherlockholmese.sgbustimings"
-    },
-    "web": {
-      "bundler": "metro"
     }
   }
 }
