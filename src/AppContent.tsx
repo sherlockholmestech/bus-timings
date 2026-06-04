@@ -20,27 +20,24 @@ import { SearchOverlay } from './components/SearchOverlay';
 import { SettingsOverlay } from './components/SettingsOverlay';
 import { useBusDataSync } from './hooks/useBusDataSync';
 import { useUserLocation } from './hooks/useUserLocation';
+import { loadBootstrapState } from './lib/bootstrap';
 import { errorMessage } from './lib/errors';
-import { compareFavorites, createEmptyService, isFavoriteService } from './lib/favorites';
+import { compareFavorites, createEmptyService } from './lib/favorites';
 import { singaporeCenter, toCoordinate } from './lib/geo';
 import {
   BusArrivalResponse,
   BusRoute,
   BusStop,
   fetchArrivals,
-  fetchBusRoutesForService,
-  isBusStop
+  fetchBusRoutesForService
 } from './lib/lta';
 import { getServiceRoute, getVisibleStops } from './lib/routeView';
 import { searchBusStops } from './lib/search';
 import { compareServiceNumbers } from './lib/sort';
 import {
   ACCOUNT_KEY_STORAGE,
-  BUS_STOPS_STORAGE,
   FAVORITES_STORAGE,
-  LEGACY_BUS_ROUTES_CACHE_TIME_STORAGE,
-  LEGACY_BUS_ROUTES_STORAGE,
-  THEME_STORAGE,
+  THEME_STORAGE
 } from './lib/storage';
 import { formatClockTime } from './lib/time';
 import { useTheme } from './ui/ThemeContext';
@@ -138,46 +135,28 @@ export function AppContent({
   );
 
   const bootstrap = useCallback(async () => {
-    const [storedKey, storedStops, storedFavorites, storedTheme] = await Promise.all([
-      AsyncStorage.getItem(ACCOUNT_KEY_STORAGE),
-      AsyncStorage.getItem(BUS_STOPS_STORAGE),
-      AsyncStorage.getItem(FAVORITES_STORAGE),
-      AsyncStorage.getItem(THEME_STORAGE),
-      AsyncStorage.removeItem(LEGACY_BUS_ROUTES_STORAGE),
-      AsyncStorage.removeItem(LEGACY_BUS_ROUTES_CACHE_TIME_STORAGE)
-    ]);
+    // `loadBootstrapState` isolates each storage read/remove so a failure on
+    // one key cannot blank the shell or abort applying other valid state.
+    const { accountKey: restoredKey, busStops: restoredStops, favorites: restoredFavorites, themeChoice: restoredTheme } =
+      await loadBootstrapState(AsyncStorage);
 
-    if (isThemeChoice(storedTheme)) {
-      onThemeChange(storedTheme);
+    if (restoredTheme) {
+      onThemeChange(restoredTheme);
     }
 
-    if (storedKey) {
-      setAccountKey(storedKey);
-      setDraftKey(storedKey);
+    if (restoredKey) {
+      setAccountKey(restoredKey);
+      setDraftKey(restoredKey);
     } else {
       setShowSettings(true);
     }
 
-    if (storedStops) {
-      try {
-        const parsedStops = JSON.parse(storedStops);
-        if (Array.isArray(parsedStops)) {
-          setBusStops(parsedStops.filter(isBusStop));
-        }
-      } catch {
-        await AsyncStorage.removeItem(BUS_STOPS_STORAGE);
-      }
+    if (restoredStops.length > 0) {
+      setBusStops(restoredStops);
     }
 
-    if (storedFavorites) {
-      try {
-        const parsedFavorites = JSON.parse(storedFavorites);
-        if (Array.isArray(parsedFavorites)) {
-          setFavorites(parsedFavorites.filter(isFavoriteService));
-        }
-      } catch {
-        await AsyncStorage.removeItem(FAVORITES_STORAGE);
-      }
+    if (restoredFavorites.length > 0) {
+      setFavorites(restoredFavorites);
     }
 
     void locateUser();
@@ -554,8 +533,4 @@ export function AppContent({
       )}
     </View>
   );
-}
-
-function isThemeChoice(value: string | null): value is ThemeChoice {
-  return value === 'light' || value === 'dark' || value === 'system';
 }

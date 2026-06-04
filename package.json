@@ -7,7 +7,8 @@
     "prebuild:android": "EXPO_NO_TELEMETRY=1 npx expo prebuild --platform android --no-install --clean",
     "build:android:debug": "EXPO_NO_TELEMETRY=1 npm run prebuild:android && ./compile-android.sh debug",
     "build:android:release": "EXPO_NO_TELEMETRY=1 npm run prebuild:android && ./compile-android.sh release",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --no-warnings --import ./src/__tests__/ts-loader.mjs --test 'src/__tests__/**/*.test.ts'"
   },
   "dependencies": {
     "@expo/ui": "^56.0.15",
@@ -27,6 +28,7 @@
     "react-native-worklets": "0.8.3"
   },
   "devDependencies": {
+    "@types/node": "^25.9.1",
     "@types/react": "~19.2.2",
     "babel-preset-expo": "~56.0.14",
     "react-dom": "19.2.3",

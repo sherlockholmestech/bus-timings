@@ -77,18 +77,22 @@ type ODataResponse<T> = {
   value?: T[];
 };
 
-type PageProgress = {
+export type PageProgress = {
   page: number;
   items: number;
   totalItems: number;
 };
 
-export async function fetchBusStops(accountKey: string, onPage?: (progress: PageProgress) => void) {
+export async function fetchBusStops(
+  accountKey: string,
+  onPage?: (progress: PageProgress) => void,
+  fetchImpl: typeof fetch = fetch
+) {
   const stops: BusStop[] = [];
 
   for (let skip = 0; ; skip += PAGE_SIZE) {
     const url = `${LTA_BASE_URL}/BusStops?$skip=${skip}`;
-    const page = await request<ODataResponse<BusStop>>(url, accountKey);
+    const page = await request<ODataResponse<BusStop>>(url, accountKey, fetchImpl);
     const values = page.value ?? [];
     stops.push(...values);
     onPage?.({ page: skip / PAGE_SIZE + 1, items: values.length, totalItems: stops.length });
@@ -101,9 +105,13 @@ export async function fetchBusStops(accountKey: string, onPage?: (progress: Page
   return stops.sort((a, b) => compareBusStopCodes(a.BusStopCode, b.BusStopCode));
 }
 
-export async function fetchArrivals(accountKey: string, busStopCode: string) {
+export async function fetchArrivals(
+  accountKey: string,
+  busStopCode: string,
+  fetchImpl: typeof fetch = fetch
+) {
   const url = `${LTA_BASE_URL}/v3/BusArrival?BusStopCode=${encodeURIComponent(busStopCode)}`;
-  const response = await request<Partial<BusArrivalResponse>>(url, accountKey);
+  const response = await request<Partial<BusArrivalResponse>>(url, accountKey, fetchImpl);
 
   return {
     BusStopCode: response.BusStopCode ?? busStopCode,
@@ -111,9 +119,13 @@ export async function fetchArrivals(accountKey: string, busStopCode: string) {
   };
 }
 
-export async function fetchBusRoutesForService(accountKey: string, serviceNo: string) {
+export async function fetchBusRoutesForService(
+  accountKey: string,
+  serviceNo: string,
+  fetchImpl: typeof fetch = fetch
+) {
   try {
-    const filteredRoutes = await fetchFilteredBusRoutesForService(accountKey, serviceNo);
+    const filteredRoutes = await fetchFilteredBusRoutesForService(accountKey, serviceNo, fetchImpl);
     if (filteredRoutes.length > 0) {
       return filteredRoutes;
     }
@@ -121,16 +133,20 @@ export async function fetchBusRoutesForService(accountKey: string, serviceNo: st
     // Some DataMall OData endpoints are inconsistent about filter support.
   }
 
-  return fetchScannedBusRoutesForService(accountKey, serviceNo);
+  return fetchScannedBusRoutesForService(accountKey, serviceNo, fetchImpl);
 }
 
-async function fetchFilteredBusRoutesForService(accountKey: string, serviceNo: string) {
+async function fetchFilteredBusRoutesForService(
+  accountKey: string,
+  serviceNo: string,
+  fetchImpl: typeof fetch
+) {
   const routes: BusRoute[] = [];
   const filter = encodeURIComponent(`ServiceNo eq '${serviceNo.replace(/'/g, "''")}'`);
 
   for (let skip = 0; ; skip += PAGE_SIZE) {
     const url = `${LTA_BASE_URL}/BusRoutes?$filter=${filter}&$skip=${skip}`;
-    const page = await request<ODataResponse<RawBusRoute>>(url, accountKey);
+    const page = await request<ODataResponse<RawBusRoute>>(url, accountKey, fetchImpl);
     const values = page.value ?? [];
     routes.push(
       ...values.map((route) => ({
@@ -149,12 +165,16 @@ async function fetchFilteredBusRoutesForService(accountKey: string, serviceNo: s
   return routes.sort(compareBusRoutes);
 }
 
-async function fetchScannedBusRoutesForService(accountKey: string, serviceNo: string) {
+async function fetchScannedBusRoutesForService(
+  accountKey: string,
+  serviceNo: string,
+  fetchImpl: typeof fetch
+) {
   const routes: BusRoute[] = [];
 
   for (let skip = 0; ; skip += PAGE_SIZE) {
     const url = `${LTA_BASE_URL}/BusRoutes?$skip=${skip}`;
-    const page = await request<ODataResponse<RawBusRoute>>(url, accountKey);
+    const page = await request<ODataResponse<RawBusRoute>>(url, accountKey, fetchImpl);
     const values = page.value ?? [];
     routes.push(
       ...values
@@ -199,8 +219,8 @@ function compareBusRoutes(a: BusRoute, b: BusRoute) {
   return a.sequence - b.sequence;
 }
 
-async function request<T>(url: string, accountKey: string): Promise<T> {
-  const response = await fetch(url, {
+async function request<T>(url: string, accountKey: string, fetchImpl: typeof fetch = fetch): Promise<T> {
+  const response = await fetchImpl(url, {
     headers: {
       AccountKey: accountKey,
       accept: 'application/json'

@@ -1,6 +1,6 @@
-import { BusServiceArrival } from './lta';
+import type { BusServiceArrival } from './lta';
 import { compareBusStopCodes, compareServiceNumbers } from './sort';
-import { FavoriteService } from '../types';
+import type { FavoriteService } from '../types';
 
 export function compareFavorites(a: FavoriteService, b: FavoriteService) {
   const stopCompare = compareBusStopCodes(a.busStopCode, b.busStopCode);
