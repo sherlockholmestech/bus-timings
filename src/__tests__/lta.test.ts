@@ -10,6 +10,7 @@ import {
   fetchArrivals,
   fetchBusRoutesForService,
   fetchBusStops,
+  hasRenderableArrival,
   isBusStop,
   minutesUntilArrival
 } from '../lib/lta';
@@ -216,6 +217,107 @@ test('minutesUntilArrival treats malformed timestamps as no active arrival', () 
   // The helper never returns NaN for any input.
   for (const candidate of ['', 'not-a-date', 'oops', '123', '0', 'null', 'NaN']) {
     assert.equal(Number.isNaN(minutesUntilArrival(candidate)), false);
+  }
+});
+
+test('hasRenderableArrival treats an empty EstimatedArrival as not renderable', () => {
+  // The LTA DataMall payload uses an empty `EstimatedArrival` to
+  // indicate "no upcoming bus for that slot". The arrival row
+  // component filters those slots out, so the row-level predicate
+  // must mirror that contract.
+  assert.equal(
+    hasRenderableArrival(emptyBus()),
+    false,
+    'empty EstimatedArrival is not a renderable arrival chip'
+  );
+});
+
+test('hasRenderableArrival accepts parseable future EstimatedArrival', () => {
+  const future = new Date(Date.now() + 5 * 60_000).toISOString();
+  assert.equal(
+    hasRenderableArrival({ ...emptyBus(), EstimatedArrival: future }),
+    true,
+    'parseable future EstimatedArrival is renderable'
+  );
+});
+
+test('hasRenderableArrival accepts parseable past EstimatedArrival (bus is "Arr")', () => {
+  const past = new Date(Date.now() - 60_000).toISOString();
+  assert.equal(
+    hasRenderableArrival({ ...emptyBus(), EstimatedArrival: past }),
+    true,
+    'parseable past EstimatedArrival is renderable (renders "Arr")'
+  );
+});
+
+test('hasRenderableArrival rejects malformed non-empty EstimatedArrival so the row never renders Infinitym/NaNm', () => {
+  // The original VAL-ARR-062 bug: a non-empty but unparseable
+  // string (e.g. a corrupted cache row, a stray "undefined" from
+  // a partial JSON, or an invalid date) used to fall through the
+  // `Boolean(bus.EstimatedArrival)` filter and reach
+  // `${Infinity}m` in the row renderer. The row-level predicate
+  // now rejects those inputs so the row falls back to "No
+  // active arrival" instead of leaking Infinitym/NaNm/raw
+  // invalid output into the UI.
+  //
+  // We deliberately avoid single- and triple-digit strings like
+  // "0" or "123" because `new Date("0")` resolves to a real
+  // instant in modern JS engines (and `new Date("123")` resolves
+  // to year 123). Those are finite, parseable timestamps and the
+  // predicate correctly accepts them — the bug we are guarding
+  // against is *unparseable* non-empty strings, not "ambiguous"
+  // ones.
+  const malformedValues = [
+    'not-a-date',
+    'undefined',
+    'null',
+    'NaN',
+    '2026-13-40T99:99:99Z',
+    '0000-00-00T00:00:00',
+    'oops',
+  ];
+  for (const malformed of malformedValues) {
+    assert.equal(
+      hasRenderableArrival({ ...emptyBus(), EstimatedArrival: malformed }),
+      false,
+      `${JSON.stringify(malformed)} is not a renderable arrival`
+    );
+  }
+});
+
+test('hasRenderableArrival rejects whitespace-only EstimatedArrival', () => {
+  // A whitespace-only timestamp is treated the same as an empty
+  // string so a row with a stray whitespace fragment does not
+  // surface an `Infinitym` chip.
+  assert.equal(
+    hasRenderableArrival({ ...emptyBus(), EstimatedArrival: '   ' }),
+    false,
+    'whitespace-only EstimatedArrival is not a renderable arrival'
+  );
+});
+
+test('hasRenderableArrival never returns true for a row that minutesUntilArrival cannot make finite', () => {
+  // The row renderer uses the predicate to skip non-finite
+  // timestamps. For any candidate input, the predicate must
+  // agree with `Number.isFinite(minutesUntilArrival(...))` — the
+  // only condition under which a chip would render. A mismatch
+  // would either drop a real arrival or let an invalid one leak
+  // through.
+  for (const candidate of [
+    '',
+    '   ',
+    'not-a-date',
+    'undefined',
+    '2026-13-40T99:99:99Z',
+    new Date(Date.now() + 5 * 60_000).toISOString(),
+    new Date(Date.now() - 60_000).toISOString(),
+  ]) {
+    const expected = Number.isFinite(minutesUntilArrival(candidate));
+    assert.equal(
+      hasRenderableArrival({ ...emptyBus(), EstimatedArrival: candidate }),
+      expected,
+      `predicate agrees with finite-minutes check for ${JSON.stringify(candidate)}`
+    );
   }
 });
 

@@ -19,7 +19,7 @@ import { SearchOverlay } from './components/SearchOverlay';
 import { SettingsOverlay } from './components/SettingsOverlay';
 import { useBusDataSync } from './hooks/useBusDataSync';
 import { useUserLocation } from './hooks/useUserLocation';
-import { invalidateRouteAndSyncTokens } from './lib/accountKeyRebinding';
+import { invalidateLiveDataTokens } from './lib/accountKeyRebinding';
 import {
   runFavoriteArrivals,
   runSelectedStopArrivals,
@@ -467,20 +467,29 @@ export function AppContent({
 
   const saveAccountKey = async () => {
     const trimmed = draftKey.trim();
-    // Synchronously invalidate the route and bus-stop sync request
-    // token stores BEFORE `setAccountKey` and the `AsyncStorage.setItem`
-    // await. The shell's commit effect also invalidates the same
-    // stores on `[accountKey, ...]`, but that effect runs *after* the
-    // next render — too late to catch a route or sync response that
-    // resolves during the `setItem` microtask. Bumping the tokens
-    // here closes that window so an old-key route response cannot
-    // update `busRoutes` / `routeState` / `selectedRouteServiceNo`
-    // / the user-visible alert, and an old-key sync response cannot
-    // update progress, write `lta.busStops` / `lta.busStops.cachedAt`,
-    // remove the legacy route cache keys, publish the in-memory stop
-    // list, or alert.
-    invalidateRouteAndSyncTokens({
+    // Synchronously invalidate every live-data request token store
+    // (selected-stop arrivals, favourite arrivals, route, and
+    // bus-stop sync) BEFORE `setAccountKey` and the
+    // `AsyncStorage.setItem` await. The shell's commit effect also
+    // invalidates the same stores on `[accountKey, ...]`, but that
+    // effect runs *after* the next render — too late to catch an
+    // arrivals, route, or sync response that resolves during the
+    // `setItem` microtask. Bumping the tokens here closes that
+    // window so an old-key selected-stop arrival response cannot
+    // update `arrivals` / `arrivalState` / `selectedStopLastUpdated`
+    // / the user-visible alert, an old-key favourite arrival
+    // response cannot update `favoriteArrivals` /
+    // `favoriteArrivalState` / `favoritesLastUpdated` / the
+    // user-visible alert, an old-key route response cannot update
+    // `busRoutes` / `routeState` / `selectedRouteServiceNo` / the
+    // user-visible alert, and an old-key sync response cannot
+    // update progress, write `lta.busStops` /
+    // `lta.busStops.cachedAt`, remove the legacy route cache keys,
+    // publish the in-memory stop list, or alert.
+    invalidateLiveDataTokens({
       routeRequestTokenStore: routeRequestTokenStoreRef.current,
+      arrivalTokenStore: arrivalTokenStoreRef.current,
+      favoriteArrivalTokenStore: favoriteArrivalTokenStoreRef.current,
       invalidateSyncRequest,
     });
     setAccountKey(trimmed);

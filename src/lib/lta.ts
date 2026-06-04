@@ -223,6 +223,35 @@ export function minutesUntilArrival(estimatedArrival: string) {
   return Math.max(0, Math.round(diffMs / 60000));
 }
 
+/**
+ * Return whether an LTA `BusArrival` row should be rendered as an
+ * active arrival chip.
+ *
+ * The LTA DataMall payload uses an empty `EstimatedArrival` string to
+ * indicate "no upcoming bus" for that slot, and the row component
+ * checks `Boolean(bus.EstimatedArrival)` to skip the slot. A small
+ * number of misbehaving rows ship a non-empty but unparseable string
+ * (e.g. `"undefined"`, `"0000-00-00T00:00:00"`, or a stray whitespace
+ * fragment from a corrupted cache). `minutesUntilArrival` already
+ * normalises those inputs to `Number.POSITIVE_INFINITY`, so checking
+ * the result with `Number.isFinite` is the canonical "is this a
+ * renderable arrival chip?" predicate.
+ *
+ * Returning `false` for malformed input falls back to the row's "No
+ * active arrival" branch (or drops the chip entirely) so the user
+ * never sees `Infinitym`, `NaNm`, raw invalid dates, or negative
+ * nonsensical output in an arrival chip. The helper is intentionally
+ * a pure function on `BusArrival` so the `ArrivalRow` and any future
+ * rendering pipeline share the same gate and so the contract can be
+ * exercised under `node --test` without a React renderer.
+ */
+export function hasRenderableArrival(bus: BusArrival): boolean {
+  if (!bus.EstimatedArrival) {
+    return false;
+  }
+  return Number.isFinite(minutesUntilArrival(bus.EstimatedArrival));
+}
+
 function compareBusRoutes(a: BusRoute, b: BusRoute) {
   const serviceCompare = compareServiceNumbers(a.serviceNo, b.serviceNo);
   if (serviceCompare !== 0) {

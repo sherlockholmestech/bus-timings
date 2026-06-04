@@ -13,7 +13,7 @@ import { Accessibility, Star } from 'lucide-react-native';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { BusArrival, BusServiceArrival, minutesUntilArrival } from '../lib/lta';
+import { BusArrival, BusServiceArrival, hasRenderableArrival, minutesUntilArrival } from '../lib/lta';
 import { AppTheme } from '../theme';
 import { IconButton, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
@@ -51,7 +51,13 @@ export function ArrivalRow({
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
   const e = theme.expressive;
-  const activeBuses = [service.NextBus, service.NextBus2, service.NextBus3].filter(hasArrival);
+  // Filter via `hasRenderableArrival` (not just `Boolean(...)` on the
+  // timestamp string) so a malformed non-empty `EstimatedArrival`
+  // value such as `"undefined"` or `"0000-00-00T00:00:00"` does not
+  // produce an `Infinitym` or `NaNm` chip. The row falls back to
+  // "No active arrival" instead, matching the contract for empty
+  // timestamps and the documented behaviour for unparseable data.
+  const activeBuses = [service.NextBus, service.NextBus2, service.NextBus3].filter(hasRenderableArrival);
   const operatorAccent = OPERATOR_ACCENTS[service.Operator] ?? FALLBACK_OPERATOR_ACCENT;
 
   return (
@@ -227,10 +233,6 @@ function BusTime({ bus }: { bus: BusArrival }) {
       </View>
     </View>
   );
-}
-
-function hasArrival(bus: BusArrival) {
-  return Boolean(bus.EstimatedArrival);
 }
 
 const styles = StyleSheet.create({
