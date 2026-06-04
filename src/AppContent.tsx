@@ -27,6 +27,7 @@ import {
   type ArrivalRefs,
   type ArrivalSetters
 } from './lib/arrivalRunner';
+import { planBackPriorityAction } from './lib/backPriority';
 import { loadBootstrapState } from './lib/bootstrap';
 import {
   FavoriteArrivalItem,
@@ -307,36 +308,75 @@ export function AppContent({
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (showSettings) {
-        setShowSettings(false);
-        return true;
+      // Delegate the priority decision to the pure helper so the
+      // order (settings → search → route → selected stop → system
+      // default) is shared with the focused tests and cannot drift
+      // between the back handler and the validation contract. The
+      // side effects for each branch stay in the component so the
+      // helper itself remains a pure function.
+      const action = planBackPriorityAction({
+        showSettings,
+        showSearch,
+        selectedRouteServiceNo,
+        selectedStop
+      });
+      switch (action.kind) {
+        case 'closeSettings':
+          setShowSettings(false);
+          return true;
+        case 'closeSearch':
+          // Dismiss the keyboard explicitly so the back press
+          // matches the close button behaviour, which already
+          // calls `Keyboard.dismiss` before invoking the parent's
+          // `onClose`. The search query is reset in lockstep with
+          // the overlay close so no stale query survives the
+          // dismissal.
+          Keyboard.dismiss();
+          setShowSearch(false);
+          setQuery('');
+          return true;
+        case 'closeRoute':
+          closeRoute();
+          return true;
+        case 'clearSelectedStop':
+          setSelectedStop(null);
+          setArrivals(null);
+          bottomSheetRef.current?.snapToIndex(1);
+          return true;
+        case 'system':
+          return false;
       }
-      if (showSearch) {
-        // Dismiss the keyboard explicitly so the back press matches the
-        // close button behaviour, which already calls `Keyboard.dismiss`
-        // before invoking the parent's `onClose`.
-        Keyboard.dismiss();
-        setShowSearch(false);
-        setQuery('');
-        return true;
-      }
-      if (selectedRouteServiceNo) {
-        closeRoute();
-        return true;
-      }
-      if (selectedStop) {
-        setSelectedStop(null);
-        setArrivals(null);
-        bottomSheetRef.current?.snapToIndex(1);
-        return true;
-      }
-      return false;
     });
     return () => subscription.remove();
   }, [closeRoute, selectedRouteServiceNo, selectedStop, showSearch, showSettings]);
 
   const goToCurrentLocation = async () => {
+    // Exits the route/arrival map context before focusing the
+    // user location. The order matches the contract behind
+    // VAL-MAP-029: close any active route view (which also
+    // invalidates in-flight route requests and clears the
+    // route lines/stops), clear the selected-stop context (and
+    // the matching arrival state so the drawer's
+    // `selectedServices` derivation stays consistent with the
+    // back-handler `clearSelectedStop` branch), close/clear the
+    // search overlay if active (with keyboard dismissal and
+    // query reset), snap the drawer to its peek state, and
+    // only then start the foreground-location flow. Without
+    // this, a stale selected-stop or active route view could
+    // co-exist with the user-location focus and trigger
+    // cross-surface regressions.
+    closeRoute();
     setSelectedStop(null);
+    setArrivals(null);
+    if (showSearch) {
+      // The search overlay owns its own keyboard, so dismiss
+      // before closing the overlay to mirror the back-handler
+      // search branch. The query reset below covers the
+      // overlay's `onClose` contract; the dismissal is purely
+      // a UX nicety so the back press matches the close button.
+      Keyboard.dismiss();
+      setShowSearch(false);
+    }
     setQuery('');
     bottomSheetRef.current?.snapToIndex(0);
     if (userLocation) {
