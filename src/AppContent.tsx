@@ -154,7 +154,7 @@ export function AppContent({
     userLocation,
   } = useUserLocation();
   const handleSettingsNeeded = useCallback(() => setShowSettings(true), []);
-  const { syncBusData, syncLabel, syncProgress, syncState } = useBusDataSync({
+  const { syncBusData, syncLabel, syncProgress, syncState, invalidateSyncRequest } = useBusDataSync({
     accountKey,
     onSettingsNeeded: handleSettingsNeeded,
     onStopsSynced: setBusStops,
@@ -416,6 +416,22 @@ export function AppContent({
     // AccountKey is non-empty) captures a fresh token.
     arrivalTokenStoreRef.current?.invalidate();
     favoriteArrivalTokenStoreRef.current?.invalidate();
+    // Invalidate any in-flight service route request started with the
+    // old AccountKey so a late response cannot update
+    // `selectedRouteServiceNo`, `busRoutes`, `routeState`, or the
+    // user-visible alert after the new key has been applied. The
+    // route runner's existing `isCurrent(token)` check after the
+    // await trips on this invalidation, dropping the stale response
+    // before it reaches the setters.
+    routeRequestTokenStoreRef.current?.invalidate();
+    // Invalidate any in-flight bus-stop sync started with the old
+    // AccountKey so a late response cannot update progress, write
+    // `lta.busStops`/`lta.busStops.cachedAt`, remove the legacy route
+    // cache keys, publish the in-memory stop list, or alert after
+    // the new key has been applied. The sync runner's per-await
+    // `isCurrent()` checks (and the in-page progress callback) all
+    // trip on this invalidation.
+    invalidateSyncRequest();
     // Reset the per-mode in-flight guards when the live-data context
     // changes. The previous in-flight request will still settle, but
     // its `finally` block will trip the token check and bail out
@@ -441,7 +457,7 @@ export function AppContent({
         void loadFavoriteArrivals();
       }
     }, ARRIVAL_REFRESH_MS);
-  }, [accountKey, loadArrivals, loadFavoriteArrivals, selectedStop]);
+  }, [accountKey, invalidateSyncRequest, loadArrivals, loadFavoriteArrivals, selectedStop]);
 
   const saveAccountKey = async () => {
     const trimmed = draftKey.trim();

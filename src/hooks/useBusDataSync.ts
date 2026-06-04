@@ -4,6 +4,7 @@ import { Alert } from 'react-native';
 
 import { createInFlightGuard, runBusDataSync, type SyncAlerter } from '../lib/syncRunner';
 import type { BusStop } from '../lib/lta';
+import { createRequestToken, type RequestTokenStore } from '../lib/requestToken';
 import type { LoadState } from '../types';
 
 type UseBusDataSyncOptions = {
@@ -31,6 +32,21 @@ export function useBusDataSync({
   // call that slips past the UI disabled state still cannot start a
   // concurrent sync.
   const guardRef = useRef(createInFlightGuard());
+  // AccountKey generation guard for in-flight syncs. The shell
+  // invalidates this store on AccountKey change/clear so a sync
+  // started with the old key cannot update progress, write the
+  // bus-stop cache, remove legacy route cache keys, publish the
+  // in-memory stop list, or alert after the rebinding. The store is
+  // lazy-initialised in a ref so the same counter instance is reused
+  // across renders.
+  const syncRequestTokenStoreRef = useRef<RequestTokenStore | null>(null);
+  if (syncRequestTokenStoreRef.current === null) {
+    syncRequestTokenStoreRef.current = createRequestToken();
+  }
+
+  const invalidateSyncRequest = useCallback(() => {
+    syncRequestTokenStoreRef.current?.invalidate();
+  }, []);
 
   const syncBusData = useCallback(
     async (overrideKey?: string) => {
@@ -45,7 +61,8 @@ export function useBusDataSync({
         alerter: nativeAlerter,
         isInFlight: () => guardRef.current.isInFlight(),
         acquireInFlight: () => guardRef.current.acquire(),
-        releaseInFlight: () => guardRef.current.release()
+        releaseInFlight: () => guardRef.current.release(),
+        syncRequestTokenStore: syncRequestTokenStoreRef.current ?? undefined
       });
     },
     [accountKey, onSettingsNeeded, onStopsSynced]
@@ -56,5 +73,6 @@ export function useBusDataSync({
     syncLabel,
     syncProgress,
     syncState,
+    invalidateSyncRequest,
   };
 }

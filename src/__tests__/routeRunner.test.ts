@@ -397,6 +397,158 @@ test('runSelectServiceRoute: pressing a service without a key from favourites mo
   assert.equal(harness.selectedRouteServiceNoCalls.length, 0, 'no route state mutation');
 });
 
+test('runSelectServiceRoute: a stale response from a previous AccountKey is dropped', async () => {
+  // VAL-CROSS-014 / VAL-ARR-056: AccountKey rebinding must
+  // invalidate in-flight route requests. The shell invalidates the
+  // route token store in the same effect that rebinds the key, so
+  // a late response from a previous-key request must be dropped
+  // before it can update `busRoutes`, `routeState`,
+  // `selectedRouteServiceNo`, or the user-visible alert.
+  const harness = makeHarness();
+  const deferred = makeDeferredFetch();
+  // Open a route with the current (old) AccountKey. The fetch is
+  // intentionally slow so we can rebind the key before it resolves.
+  const firstOpen = runSelectServiceRoute({
+    accountKey: 'old-key',
+    serviceNo: '2',
+    currentlySelectedServiceNo: null,
+    refs: harness.refs,
+    setters: harness.setters,
+    alerter: harness.alerter,
+    onSettingsNeeded: () => harness.incrementSettingsNeeded(),
+    fetchBusRoutesForServiceImpl: deferred.impl
+  });
+  // Sanity: the loading state is set and the fetch has been
+  // called exactly once for the old key.
+  assert.deepEqual(harness.routeStateCalls, ['loading']);
+  assert.equal(deferred.calls.length, 1, 'first fetch is launched for the old key');
+  // Simulate AccountKey rebinding: the shell effect invalidates
+  // the route token store (the same store the runner uses). This
+  // is exactly what the AppContent effect does on
+  // `[accountKey, ...]`.
+  harness.tokenStore.invalidate();
+  // The first fetch resolves with a stale response; the runner
+  // must drop it because its token is no longer current.
+  deferred.resolve([makeRoute('2', 1, 1, '01012')]);
+  await firstOpen;
+  // No success transitions, no alert, no bus-routes update.
+  assert.equal(harness.busRoutesCalls.length, 1, 'no second busRoutes call (no stale success)');
+  assert.equal(harness.busRoutesCalls[0]?.length, 0, 'only the initial clear is recorded');
+  assert.deepEqual(harness.routeStateCalls, ['loading'], 'routeState stays at loading (no stale idle transition)');
+  assert.equal(harness.alertCalls.length, 0, 'no stale success alert');
+});
+
+test('runSelectServiceRoute: a stale error response from a previous AccountKey is dropped', async () => {
+  // VAL-CROSS-014: the rebinding must also drop a stale error
+  // response so the user is not alerted about a fetch that was
+  // already superseded by the new key. The error path is reached
+  // when the fetch impl throws.
+  const harness = makeHarness();
+  const fetchError = new Error('old-key boom');
+  const rejectingImpl: FetchImpl = async () => {
+    throw fetchError;
+  };
+  const firstOpen = runSelectServiceRoute({
+    accountKey: 'old-key',
+    serviceNo: '2',
+    currentlySelectedServiceNo: null,
+    refs: harness.refs,
+    setters: harness.setters,
+    alerter: harness.alerter,
+    onSettingsNeeded: () => harness.incrementSettingsNeeded(),
+    fetchBusRoutesForServiceImpl: rejectingImpl
+  });
+  // Simulate the AccountKey rebinding before the rejection
+  // propagates through the runner.
+  harness.tokenStore.invalidate();
+  await firstOpen;
+  // The error path bails: the selected route service is NOT
+  // cleared, routeState stays at loading, and the alert does not
+  // fire. The runner's `finally` block would normally call
+  // `releaseInFlight`, but the in-flight guard is owned by the
+  // shell (not the runner), so the test only checks the
+  // user-visible side effects.
+  assert.deepEqual(harness.selectedRouteServiceNoCalls, ['2'], 'selectedRouteServiceNo stays set to the open service');
+  assert.deepEqual(harness.routeStateCalls, ['loading'], 'routeState stays at loading (no stale error transition)');
+  assert.equal(harness.alertCalls.length, 0, 'no stale error alert');
+});
+
+test('runSelectServiceRoute: a stale response after AccountKey clear is dropped', async () => {
+  // VAL-CROSS-014: clearing the AccountKey (Save key with an
+  // empty draft) must also invalidate in-flight route requests.
+  // The runner bails on the resolve and leaves the route state
+  // alone, and a subsequent press with the now-empty key opens
+  // settings without an LTA request.
+  const harness = makeHarness();
+  const deferred = makeDeferredFetch();
+  const firstOpen = runSelectServiceRoute({
+    accountKey: 'old-key',
+    serviceNo: '2',
+    currentlySelectedServiceNo: null,
+    refs: harness.refs,
+    setters: harness.setters,
+    alerter: harness.alerter,
+    onSettingsNeeded: () => harness.incrementSettingsNeeded(),
+    fetchBusRoutesForServiceImpl: deferred.impl
+  });
+  // Simulate the user clearing the AccountKey: the shell
+  // invalidates the route token store.
+  harness.tokenStore.invalidate();
+  deferred.resolve([makeRoute('2', 1, 1, '01012')]);
+  await firstOpen;
+  assert.equal(harness.busRoutesCalls.length, 1, 'no second busRoutes call (no stale success)');
+  assert.equal(harness.busRoutesCalls[0]?.length, 0, 'only the initial clear is recorded');
+  assert.deepEqual(harness.routeStateCalls, ['loading'], 'routeState stays at loading');
+  assert.equal(harness.alertCalls.length, 0, 'no stale success alert');
+  // A subsequent press with the now-empty key on a different
+  // service must open settings and never call LTA — the
+  // "empty-key" branch of the runner is the canonical no-LTA
+  // fallback for an empty trimmed key.
+  let calledAfterClear = 0;
+  const implAfterClear: FetchImpl = async () => {
+    calledAfterClear += 1;
+    return [];
+  };
+  await runSelectServiceRoute({
+    accountKey: '',
+    serviceNo: '7',
+    currentlySelectedServiceNo: '2',
+    refs: harness.refs,
+    setters: harness.setters,
+    alerter: harness.alerter,
+    onSettingsNeeded: () => harness.incrementSettingsNeeded(),
+    fetchBusRoutesForServiceImpl: implAfterClear
+  });
+  assert.equal(calledAfterClear, 0, 'no LTA call after AccountKey clear');
+  assert.equal(harness.onSettingsNeededCalls, 1, 'settings is opened on a new-service press with an empty key');
+});
+
+test('runSelectServiceRoute: a future route press with the new AccountKey uses only the new key', async () => {
+  // VAL-CROSS-014: future route actions must use only the current
+  // trimmed key. After a rebinding, the next press must call LTA
+  // with the new key and must not pass the old key.
+  const harness = makeHarness();
+  const keysSeen: string[] = [];
+  const impl: FetchImpl = async (key) => {
+    keysSeen.push(key);
+    return [makeRoute('2', 1, 1, '01012')];
+  };
+  await runSelectServiceRoute({
+    accountKey: 'new-key',
+    serviceNo: '2',
+    currentlySelectedServiceNo: null,
+    refs: harness.refs,
+    setters: harness.setters,
+    alerter: harness.alerter,
+    onSettingsNeeded: () => harness.incrementSettingsNeeded(),
+    fetchBusRoutesForServiceImpl: impl
+  });
+  assert.deepEqual(keysSeen, ['new-key'], 'the LTA request used the new trimmed key');
+  assert.equal(harness.alertCalls.length, 0, 'no alert on a non-empty success');
+  assert.deepEqual(harness.selectedRouteServiceNoCalls, ['2']);
+  assert.deepEqual(harness.routeStateCalls, ['loading', 'idle']);
+});
+
 // Mark `emptyService` as intentionally unused so the helper
 // reference does not trip an unused-symbol lint. The helper mirrors
 // the empty-service fixture used by the arrival runner tests.

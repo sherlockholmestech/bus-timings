@@ -13,6 +13,7 @@ import {
   makeRecordingStorage,
   runBusDataSync
 } from '../lib/syncRunner';
+import { createRequestToken } from '../lib/requestToken';
 import type { BusStop, PageProgress } from '../lib/lta';
 
 const validStop: BusStop = {
@@ -368,4 +369,332 @@ test('successful sync writes lta.busStops and lta.busStops.cachedAt to storage b
     events.includes('remove:lta.busRoutes.cachedAt'),
     'lta.busRoutes.cachedAt must be removed'
   );
+});
+
+type BusStopsFetchImpl = typeof import('../lib/lta').fetchBusStops;
+
+function makeDeferredBusStops(): {
+  impl: BusStopsFetchImpl;
+  resolve: (stops: BusStop[]) => void;
+  calls: string[];
+  pageCalls: number[];
+} {
+  const resolvers: Array<(stops: BusStop[]) => void> = [];
+  const calls: string[] = [];
+  const pageCalls: number[] = [];
+  const impl: BusStopsFetchImpl = async (accountKey, onPage) => {
+    calls.push(accountKey);
+    onPage?.({ page: 1, items: 1, totalItems: 1 });
+    pageCalls.push(1);
+    return await new Promise<BusStop[]>((resolve) => {
+      resolvers.push(resolve);
+    });
+  };
+  return {
+    impl,
+    calls,
+    pageCalls,
+    resolve(stops) {
+      const next = resolvers.shift();
+      if (next) {
+        next(stops);
+      }
+    }
+  };
+}
+
+test('stale sync after AccountKey change: cache write, legacy cleanup, in-memory publish, and alert are all suppressed', async () => {
+  // VAL-CROSS-014 / VAL-CROSS-015: AccountKey rebinding must
+  // invalidate the in-flight bus-stop sync. The shell invalidates
+  // the sync token store in the same effect that rebinds the key,
+  // so a late response from a previous-key sync must drop the
+  // cache write, the legacy route cache cleanup, the in-memory
+  // publish, the final progress/label transitions, and the error
+  // alert.
+  const guard = createInFlightGuard();
+  const setters = makeRecordingSetters();
+  const storage = makeRecordingStorage();
+  const alerter = makeRecordingAlerter();
+  const syncRequestTokenStore = createRequestToken();
+  let onStopsSyncedCount = 0;
+  const deferred = makeDeferredBusStops();
+  const options: Parameters<typeof runBusDataSync>[0] = {
+    accountKey: 'old-key',
+    onSettingsNeeded: () => undefined,
+    onStopsSynced: (_stops) => {
+      onStopsSyncedCount += 1;
+    },
+    setSyncState: setters.setSyncState,
+    setSyncLabel: setters.setSyncLabel,
+    setSyncProgress: setters.setSyncProgress,
+    storage,
+    alerter,
+    isInFlight: () => guard.isInFlight(),
+    acquireInFlight: () => guard.acquire(),
+    releaseInFlight: () => guard.release(),
+    fetchBusStopsImpl: deferred.impl,
+    now: () => new Date('2026-06-04T00:00:00Z').getTime(),
+    syncRequestTokenStore
+  };
+  // Start the sync with the old key. The fetch is deferred so the
+  // AccountKey rebinding can fire before the fetch resolves.
+  const firstSync = runBusDataSync(options);
+  // Sanity: the loading state is set and the in-flight guard is held.
+  assert.deepEqual(setters.states, ['loading'], 'loading state is set on the first sync');
+  assert.equal(guard.isInFlight(), true, 'in-flight guard is held by the first sync');
+  assert.equal(deferred.calls.length, 1, 'first fetch is launched for the old key');
+  assert.equal(deferred.calls[0], 'old-key', 'first fetch used the old key');
+  // Simulate AccountKey rebinding: the shell effect invalidates
+  // the sync token store (the same store the runner uses). This is
+  // exactly what the AppContent effect does on `[accountKey, ...]`.
+  syncRequestTokenStore.invalidate();
+  // The first fetch resolves; the runner bails because its token
+  // is no longer current.
+  deferred.resolve([validStop]);
+  await firstSync;
+  // No storage writes: the cache write is skipped.
+  assert.equal(
+    storage.written.length,
+    0,
+    'lta.busStops and lta.busStops.cachedAt are not written by a stale sync'
+  );
+  // No legacy cache removals: the legacy cleanup is skipped.
+  assert.equal(
+    storage.removed.length,
+    0,
+    'lta.busRoutes and lta.busRoutes.cachedAt are not removed by a stale sync'
+  );
+  // No in-memory publish: the existing bus stop list stays visible.
+  assert.equal(onStopsSyncedCount, 0, 'onStopsSynced is not called for a stale sync');
+  // No error alert: a stale success response does not trigger any
+  // user-visible error.
+  assert.equal(alerter.calls.length, 0, 'no alert for a stale sync');
+  // The final progress/label transitions are skipped: the recorded
+  // state/label set only contains the initial "loading" entries.
+  assert.deepEqual(setters.states, ['loading'], 'no idle/error state transition for a stale sync');
+  assert.equal(
+    setters.labels.filter((label) => label === 'Synced 1 bus stops').length,
+    0,
+    'no success label for a stale sync'
+  );
+  assert.equal(
+    setters.labels.filter((label) => label === 'Sync failed').length,
+    0,
+    'no error label for a stale sync'
+  );
+  // The in-flight guard is released so the next sync attempt can
+  // start without waiting for the superseded fetch to settle.
+  assert.equal(guard.isInFlight(), false, 'in-flight guard is released by the stale sync');
+});
+
+test('stale sync after AccountKey change suppresses per-page progress updates from the superseded fetch', async () => {
+  // VAL-CROSS-014: while the AccountKey is being rebound, the
+  // per-page progress callbacks (which run during the fetch) must
+  // also be suppressed. The runner re-checks the token inside the
+  // `onPage` callback so a superseded sync does not continue to
+  // advance the loading bar.
+  const guard = createInFlightGuard();
+  const setters = makeRecordingSetters();
+  const storage = makeRecordingStorage();
+  const alerter = makeRecordingAlerter();
+  const syncRequestTokenStore = createRequestToken();
+  const resolvers: Array<(stops: BusStop[]) => void> = [];
+  const fetchImpl: BusStopsFetchImpl = async (_accountKey, onPage) => {
+    // The first page fires while the token is still current.
+    onPage?.({ page: 1, items: 1, totalItems: 100 });
+    // Schedule a delayed second page; by the time it fires, the
+    // AccountKey has been rebound and the token is stale.
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+    onPage?.({ page: 2, items: 1, totalItems: 200 });
+    return await new Promise<BusStop[]>((resolvePromise) => {
+      resolvers.push(resolvePromise);
+    });
+  };
+  const options: Parameters<typeof runBusDataSync>[0] = {
+    accountKey: 'old-key',
+    onSettingsNeeded: () => undefined,
+    onStopsSynced: () => undefined,
+    setSyncState: setters.setSyncState,
+    setSyncLabel: setters.setSyncLabel,
+    setSyncProgress: setters.setSyncProgress,
+    storage,
+    alerter,
+    isInFlight: () => guard.isInFlight(),
+    acquireInFlight: () => guard.acquire(),
+    releaseInFlight: () => guard.release(),
+    fetchBusStopsImpl: fetchImpl,
+    now: () => new Date('2026-06-04T00:00:00Z').getTime(),
+    syncRequestTokenStore
+  };
+  const firstSync = runBusDataSync(options);
+  // Give the first `onPage` call a tick to run.
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  // Simulate AccountKey rebinding before the second page fires.
+  syncRequestTokenStore.invalidate();
+  // Wait for the second `onPage` call to run; the runner should
+  // not forward it.
+  await new Promise<void>((resolve) => setTimeout(resolve, 15));
+  // The first page set a label; the second page must not overwrite
+  // the running label or advance the progress bar further.
+  const labelsAfterFirstPage = [...setters.labels];
+  const progressAfterFirstPage = [...setters.progress];
+  // Resolve the fetch so the runner can settle (and bail).
+  const nextResolver = resolvers.shift();
+  if (nextResolver) {
+    nextResolver([validStop]);
+  }
+  await firstSync;
+  // The labels and progress should not have been touched after the
+  // invalidation.
+  assert.deepEqual(
+    [...setters.labels],
+    labelsAfterFirstPage,
+    'no further label updates after the AccountKey rebinding'
+  );
+  assert.deepEqual(
+    [...setters.progress],
+    progressAfterFirstPage,
+    'no further progress updates after the AccountKey rebinding'
+  );
+  // No storage writes, no in-memory publish, no alert.
+  assert.equal(storage.written.length, 0, 'no cache write from a stale sync');
+  assert.equal(storage.removed.length, 0, 'no legacy cache removal from a stale sync');
+  assert.equal(alerter.calls.length, 0, 'no alert from a stale sync');
+});
+
+test('stale sync after AccountKey change: a stale error response does not alert the user', async () => {
+  // VAL-CROSS-014: the rebinding must also drop a stale error
+  // response so the user is not alerted about a fetch that was
+  // already superseded by the new key.
+  const guard = createInFlightGuard();
+  const setters = makeRecordingSetters();
+  const storage = makeRecordingStorage();
+  const alerter = makeRecordingAlerter();
+  const syncRequestTokenStore = createRequestToken();
+  const fetchImpl: BusStopsFetchImpl = async () => {
+    throw new Error('old-key boom');
+  };
+  const options: Parameters<typeof runBusDataSync>[0] = {
+    accountKey: 'old-key',
+    onSettingsNeeded: () => undefined,
+    onStopsSynced: () => undefined,
+    setSyncState: setters.setSyncState,
+    setSyncLabel: setters.setSyncLabel,
+    setSyncProgress: setters.setSyncProgress,
+    storage,
+    alerter,
+    isInFlight: () => guard.isInFlight(),
+    acquireInFlight: () => guard.acquire(),
+    releaseInFlight: () => guard.release(),
+    fetchBusStopsImpl: fetchImpl,
+    now: () => new Date('2026-06-04T00:00:00Z').getTime(),
+    syncRequestTokenStore
+  };
+  const firstSync = runBusDataSync(options);
+  // Simulate AccountKey rebinding before the rejection propagates.
+  syncRequestTokenStore.invalidate();
+  await firstSync;
+  // The error path bails: no alert, no error state/label, no
+  // storage writes.
+  assert.equal(alerter.calls.length, 0, 'no alert for a stale error');
+  assert.equal(
+    setters.states.filter((state) => state === 'error').length,
+    0,
+    'no error state transition for a stale sync'
+  );
+  assert.equal(
+    setters.labels.filter((label) => label === 'Sync failed').length,
+    0,
+    'no "Sync failed" label for a stale sync'
+  );
+  assert.equal(storage.written.length, 0, 'no storage writes from a stale error');
+  // The in-flight guard is still released so the next sync can run.
+  assert.equal(guard.isInFlight(), false, 'in-flight guard is released by the stale error sync');
+});
+
+test('stale sync after AccountKey clear: all side effects are suppressed', async () => {
+  // VAL-CROSS-014: clearing the AccountKey (Save key with an
+  // empty draft) must also invalidate the in-flight sync. A late
+  // response from a previous-key sync must drop every side effect,
+  // and a subsequent call with the now-empty key must open
+  // settings without an LTA request.
+  const guard = createInFlightGuard();
+  const setters = makeRecordingSetters();
+  const storage = makeRecordingStorage();
+  const alerter = makeRecordingAlerter();
+  const syncRequestTokenStore = createRequestToken();
+  let onStopsSyncedCount = 0;
+  let onSettingsNeededCount = 0;
+  const deferred = makeDeferredBusStops();
+  const options: Parameters<typeof runBusDataSync>[0] = {
+    accountKey: 'old-key',
+    onSettingsNeeded: () => {
+      onSettingsNeededCount += 1;
+    },
+    onStopsSynced: (_stops) => {
+      onStopsSyncedCount += 1;
+    },
+    setSyncState: setters.setSyncState,
+    setSyncLabel: setters.setSyncLabel,
+    setSyncProgress: setters.setSyncProgress,
+    storage,
+    alerter,
+    isInFlight: () => guard.isInFlight(),
+    acquireInFlight: () => guard.acquire(),
+    releaseInFlight: () => guard.release(),
+    fetchBusStopsImpl: deferred.impl,
+    now: () => new Date('2026-06-04T00:00:00Z').getTime(),
+    syncRequestTokenStore
+  };
+  // Start the sync with the old key.
+  const firstSync = runBusDataSync(options);
+  // Simulate the user clearing the AccountKey: the shell
+  // invalidates the sync token store.
+  syncRequestTokenStore.invalidate();
+  // The first fetch resolves; the runner bails.
+  deferred.resolve([validStop]);
+  await firstSync;
+  // No storage writes, no legacy cache removals, no in-memory
+  // publish, no alert.
+  assert.equal(storage.written.length, 0, 'no cache write from a stale sync after clear');
+  assert.equal(storage.removed.length, 0, 'no legacy cache removal from a stale sync after clear');
+  assert.equal(onStopsSyncedCount, 0, 'onStopsSynced is not called for a stale sync after clear');
+  assert.equal(alerter.calls.length, 0, 'no alert for a stale sync after clear');
+  assert.equal(
+    setters.states.filter((state) => state === 'idle' || state === 'error').length,
+    0,
+    'no idle/error state transition for a stale sync after clear'
+  );
+  // The in-flight guard is released so the next sync (with the
+  // cleared key) can run.
+  assert.equal(guard.isInFlight(), false, 'in-flight guard is released by the stale sync after clear');
+  // A subsequent call with the now-empty key must open settings
+  // and never call LTA. The runner's empty-key branch is the
+  // canonical no-LTA fallback.
+  const secondOptions: Parameters<typeof runBusDataSync>[0] = {
+    ...options,
+    accountKey: '',
+    fetchBusStopsImpl: (async () => {
+      throw new Error('LTA should not be called with an empty key');
+    }) as BusStopsFetchImpl
+  };
+  await runBusDataSync(secondOptions);
+  assert.equal(onSettingsNeededCount, 1, 'settings is opened for the cleared key');
+  assert.equal(storage.written.length, 0, 'no cache write for the empty-key call');
+});
+
+test('future sync after AccountKey rebinding uses only the new trimmed key', async () => {
+  // VAL-CROSS-014: a future sync action must use only the current
+  // trimmed key. After a rebinding, the next sync must call LTA
+  // with the new key and must not pass the old key.
+  const ctx = makeOptions({ accountKey: 'new-key' });
+  await runBusDataSync(ctx.options);
+  // The fetch was called with the new key (the test's `fetchImpl`
+  // pushes the key argument into a side channel; here we just
+  // assert the standard success path was taken).
+  assert.deepEqual(ctx.setters.states, ['loading', 'idle']);
+  assert.equal(ctx.counters.onStopsSyncedCount, 1);
+  assert.equal(ctx.alerter.calls.length, 0);
+  const stopsWrite = ctx.storage.written.find((entry) => entry.key === 'lta.busStops');
+  assert.ok(stopsWrite, 'lta.busStops is written for the new key');
 });

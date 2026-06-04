@@ -4,9 +4,25 @@
 // runtime. The runner enforces the sync re-entry guard (only one
 // concurrent sync, regardless of how the call was triggered) and the
 // AccountKey guard (no key → no network call).
+//
+// AccountKey rebinding
+// --------------------
+// When the shell rebinds the AccountKey (Save key with a changed or
+// empty value), it invalidates the shared `syncRequestTokenStore`
+// passed in via the options. The runner captures a token at the
+// start of the in-flight sync and re-checks the store after every
+// `await` and inside the per-page progress callback. If the token is
+// no longer current, the runner bails before the cache write, the
+// legacy route cache cleanup, the in-memory bus stop publish, and the
+// final progress/label transitions. The same token check guards the
+// error path so a stale error cannot alert the user about a sync
+// that was already superseded by the new key. The in-flight guard is
+// still released in `finally` so the next sync (if any) can start
+// immediately rather than waiting for the superseded fetch to settle.
 
 import { errorMessage } from './errors';
 import { fetchBusStops, type BusStop } from './lta';
+import { type RequestTokenStore } from './requestToken';
 import {
   BUS_STOPS_CACHE_TIME_STORAGE,
   BUS_STOPS_STORAGE,
@@ -42,6 +58,18 @@ export type RunSyncOptions = {
   isInFlight: () => boolean;
   acquireInFlight: () => boolean;
   releaseInFlight: () => void;
+  /**
+   * Optional generation guard. When provided, the runner captures a
+   * token at the start of the in-flight sync and re-checks the store
+   * after every `await` and inside the per-page progress callback.
+   * The shell invalidates this store on AccountKey change/clear so a
+   * sync started with the old key cannot update progress, write
+   * `lta.busStops`/`lta.busStops.cachedAt`, remove legacy route cache
+   * keys, publish in-memory stops, or alert after the rebinding.
+   * When `undefined`, the runner behaves exactly as before (no
+   * AccountKey-aware staleness guard).
+   */
+  syncRequestTokenStore?: RequestTokenStore;
   // Test seam: production uses the real `fetchBusStops`.
   fetchBusStopsImpl?: typeof fetchBusStops;
   // Test seam: production uses `Date.now()`; tests can pin time.
@@ -63,15 +91,33 @@ export async function runBusDataSync(options: RunSyncOptions): Promise<void> {
     return;
   }
 
+  // Capture a token against the AccountKey generation guard before
+  // any side effects. If the shell invalidates the store (e.g. on
+  // Save key with a new value), every `isCurrent()` check below will
+  // fail and the runner will bail without mutating state.
+  const token = options.syncRequestTokenStore?.capture();
+  const isCurrent = () =>
+    options.syncRequestTokenStore === undefined
+      ? true
+      : options.syncRequestTokenStore.isCurrent(token as number);
+
   options.setSyncState('loading');
   options.setSyncProgress(0);
   options.setSyncLabel('Starting sync...');
   try {
     const fetchImpl = options.fetchBusStopsImpl ?? fetchBusStops;
     const stops = await fetchImpl(key, ({ totalItems }) => {
+      // Drop per-page progress updates for a superseded sync so the
+      // loading bar does not continue to advance for the old key.
+      if (!isCurrent()) {
+        return;
+      }
       options.setSyncProgress(0.1 + Math.min(totalItems / 5200, 1) * 0.35);
       options.setSyncLabel(`Syncing bus stops (${totalItems.toLocaleString()})`);
     });
+    if (!isCurrent()) {
+      return;
+    }
     options.setSyncProgress(0.48);
     options.setSyncLabel('Saving bus stops...');
     // Persist the new bus stop cache + cachedAt timestamp BEFORE
@@ -81,10 +127,16 @@ export async function runBusDataSync(options: RunSyncOptions): Promise<void> {
     // bus stops remain visible to map and search instead of being
     // replaced by an unsaved set.
     await options.storage.setItem(BUS_STOPS_STORAGE, JSON.stringify(stops));
+    if (!isCurrent()) {
+      return;
+    }
     await options.storage.setItem(
       BUS_STOPS_CACHE_TIME_STORAGE,
       new Date((options.now?.() ?? Date.now())).toISOString()
     );
+    if (!isCurrent()) {
+      return;
+    }
     // Legacy route cache cleanup is best-effort and runs only after the
     // primary cache persistence has succeeded. A single removal failure
     // must not prevent the in-memory update from happening. AccountKey,
@@ -97,6 +149,9 @@ export async function runBusDataSync(options: RunSyncOptions): Promise<void> {
         .removeItem(LEGACY_BUS_ROUTES_CACHE_TIME_STORAGE)
         .catch(() => undefined)
     ]);
+    if (!isCurrent()) {
+      return;
+    }
     // Publish the new stops to in-memory map/search state only after
     // the primary cache persistence has succeeded. Legacy cleanup
     // failures have already been contained by the `.catch` handlers
@@ -108,10 +163,22 @@ export async function runBusDataSync(options: RunSyncOptions): Promise<void> {
     options.setSyncLabel(`Synced ${stops.length.toLocaleString()} bus stops`);
     options.setSyncState('idle');
   } catch (error) {
+    // Drop the error path entirely for a superseded sync so a stale
+    // failure cannot alert the user about a sync that was already
+    // replaced by a new-key sync (or by the user clearing the key).
+    if (!isCurrent()) {
+      return;
+    }
     options.setSyncState('error');
     options.setSyncLabel('Sync failed');
     options.alerter.alert('Could not sync bus data', errorMessage(error));
   } finally {
+    // The in-flight guard is always released, including for
+    // superseded syncs. The shell's next sync attempt (if any) would
+    // otherwise have to wait for the superseded fetch to fully
+    // resolve, which is wasteful since the new key's sync is the
+    // authoritative one. The token check above already protected
+    // every side effect, so releasing the guard is safe.
     options.releaseInFlight();
   }
 }
