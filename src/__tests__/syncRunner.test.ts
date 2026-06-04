@@ -225,3 +225,147 @@ test('legacy cache cleanup is best-effort and a single removal failure does not 
   assert.ok(effectiveStorage.removed.includes('lta.busRoutes'));
   assert.ok(effectiveStorage.removed.includes('lta.busRoutes.cachedAt'));
 });
+
+test('storage write failure on lta.busStops preserves existing in-memory bus stops and reports the failure', async () => {
+  // The mock storage throws when asked to persist the new bus stop
+  // cache. The runner must not call `onStopsSynced` in that case so the
+  // existing in-memory bus stop list (consumed by map and search)
+  // remains unchanged.
+  const storage = {
+    removed: [] as string[],
+    written: [] as Array<{ key: string; value: string }>,
+    async removeItem(key: string) {
+      this.removed.push(key);
+    },
+    async setItem(key: string, value: string) {
+      this.written.push({ key, value });
+      if (key === 'lta.busStops') {
+        throw new Error('cache write failure');
+      }
+    }
+  };
+  const ctx = makeOptions({ storage });
+  await runBusDataSync(ctx.options);
+  const effectiveStorage = ctx.options.storage as typeof storage;
+  // The failing write was attempted...
+  assert.ok(effectiveStorage.written.some((entry) => entry.key === 'lta.busStops'));
+  // ...but the in-memory callback is NOT called, so the existing bus
+  // stops that the shell already exposes to map and search stay
+  // untouched.
+  assert.equal(ctx.counters.onStopsSyncedCount, 0);
+  // The cachedAt write was never attempted because the bus stops
+  // write failed first.
+  assert.ok(
+    !effectiveStorage.written.some((entry) => entry.key === 'lta.busStops.cachedAt'),
+    'lta.busStops.cachedAt must not be written when lta.busStops fails'
+  );
+  // Legacy cleanup is contained by the failure path: it does not run
+  // either, so a transient cache write failure does not double-purge
+  // unrelated legacy keys.
+  assert.equal(effectiveStorage.removed.length, 0);
+  // The user-visible error is surfaced with the original message.
+  assert.equal(ctx.alerter.calls.length, 1);
+  assert.equal(ctx.alerter.calls[0]?.title, 'Could not sync bus data');
+  assert.equal(ctx.alerter.calls[0]?.message, 'cache write failure');
+  // The error state and label are recorded.
+  assert.equal(ctx.setters.states[ctx.setters.states.length - 1], 'error');
+  const lastLabel = ctx.setters.labels[ctx.setters.labels.length - 1];
+  assert.equal(lastLabel, 'Sync failed');
+  // The in-flight guard is released so a subsequent sync can run.
+  assert.equal(ctx.options.isInFlight(), false);
+});
+
+test('storage write failure on lta.busStops.cachedAt preserves existing in-memory bus stops and reports the failure', async () => {
+  // The bus stops write succeeds, but the cachedAt write throws. The
+  // runner must still preserve the existing in-memory bus stop list
+  // (no `onStopsSynced` call), surface the error, and release the
+  // in-flight guard.
+  const storage = {
+    removed: [] as string[],
+    written: [] as Array<{ key: string; value: string }>,
+    async removeItem(key: string) {
+      this.removed.push(key);
+    },
+    async setItem(key: string, value: string) {
+      this.written.push({ key, value });
+      if (key === 'lta.busStops.cachedAt') {
+        throw new Error('cachedAt write failure');
+      }
+    }
+  };
+  const ctx = makeOptions({ storage });
+  await runBusDataSync(ctx.options);
+  const effectiveStorage = ctx.options.storage as typeof storage;
+  // The bus stops write did succeed, but the cachedAt write failed.
+  assert.ok(effectiveStorage.written.some((entry) => entry.key === 'lta.busStops'));
+  assert.ok(
+    effectiveStorage.written.some((entry) => entry.key === 'lta.busStops.cachedAt'),
+    'lta.busStops.cachedAt write was attempted'
+  );
+  // The in-memory callback is NOT called: the existing bus stops stay
+  // visible to map and search.
+  assert.equal(ctx.counters.onStopsSyncedCount, 0);
+  // Legacy cleanup is contained by the failure path.
+  assert.equal(effectiveStorage.removed.length, 0);
+  // The user-visible error is surfaced with the original message.
+  assert.equal(ctx.alerter.calls.length, 1);
+  assert.equal(ctx.alerter.calls[0]?.title, 'Could not sync bus data');
+  assert.equal(ctx.alerter.calls[0]?.message, 'cachedAt write failure');
+  // The in-flight guard is released.
+  assert.equal(ctx.options.isInFlight(), false);
+});
+
+test('successful sync writes lta.busStops and lta.busStops.cachedAt to storage before publishing the new stops in-memory', async () => {
+  // The mock storage records an ordered event log so we can assert
+  // that the primary cache writes are flushed before the in-memory
+  // publish callback fires. This is the contract that guarantees
+  // map/search never see a stop list that has not been persisted.
+  const events: string[] = [];
+  const storage = {
+    removed: [] as string[],
+    written: [] as Array<{ key: string; value: string }>,
+    async removeItem(key: string) {
+      events.push(`remove:${key}`);
+      this.removed.push(key);
+    },
+    async setItem(key: string, value: string) {
+      events.push(`set:${key}`);
+      this.written.push({ key, value });
+    }
+  };
+  const ctx = makeOptions({
+    storage,
+    onStopsSynced: (stops: BusStop[]) => {
+      events.push(`publish:${stops.length}`);
+    }
+  });
+  await runBusDataSync(ctx.options);
+
+  const busStopsWriteIndex = events.indexOf('set:lta.busStops');
+  const cacheAtWriteIndex = events.indexOf('set:lta.busStops.cachedAt');
+  const publishIndex = events.indexOf('publish:1');
+
+  assert.ok(busStopsWriteIndex >= 0, 'lta.busStops setItem must be recorded');
+  assert.ok(cacheAtWriteIndex >= 0, 'lta.busStops.cachedAt setItem must be recorded');
+  assert.ok(publishIndex >= 0, 'in-memory publish must be recorded');
+  assert.ok(
+    busStopsWriteIndex < publishIndex,
+    'lta.busStops must be persisted before the in-memory publish'
+  );
+  assert.ok(
+    cacheAtWriteIndex < publishIndex,
+    'lta.busStops.cachedAt must be persisted before the in-memory publish'
+  );
+
+  // Legacy cleanup runs after both primary writes and is allowed to be
+  // interleaved with them since the .catch handlers already contain
+  // any single-key failure.
+  assert.ok(
+    events.includes('remove:lta.busRoutes'),
+    'lta.busRoutes must be removed'
+  );
+  assert.ok(
+    events.includes('remove:lta.busRoutes.cachedAt'),
+    'lta.busRoutes.cachedAt must be removed'
+  );
+});

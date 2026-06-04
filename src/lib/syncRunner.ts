@@ -74,22 +74,35 @@ export async function runBusDataSync(options: RunSyncOptions): Promise<void> {
     });
     options.setSyncProgress(0.48);
     options.setSyncLabel('Saving bus stops...');
-    options.onStopsSynced(stops);
-    // Persist the new cache + cachedAt timestamp while removing the
-    // legacy route cache keys. Legacy cleanup is best-effort: a single
-    // removal failure must not prevent the new bus stop cache from
-    // being saved. AccountKey, favourites, and theme values are
-    // deliberately untouched.
+    // Persist the new bus stop cache + cachedAt timestamp BEFORE
+    // publishing the new stops to in-memory map/search state. If a
+    // primary write throws, the catch block below surfaces the failure
+    // to the user and skips `onStopsSynced`, so the existing cached
+    // bus stops remain visible to map and search instead of being
+    // replaced by an unsaved set.
+    await options.storage.setItem(BUS_STOPS_STORAGE, JSON.stringify(stops));
+    await options.storage.setItem(
+      BUS_STOPS_CACHE_TIME_STORAGE,
+      new Date((options.now?.() ?? Date.now())).toISOString()
+    );
+    // Legacy route cache cleanup is best-effort and runs only after the
+    // primary cache persistence has succeeded. A single removal failure
+    // must not prevent the in-memory update from happening. AccountKey,
+    // favourites, and theme values are deliberately untouched.
     await Promise.all([
       options.storage
         .removeItem(LEGACY_BUS_ROUTES_STORAGE)
         .catch(() => undefined),
       options.storage
         .removeItem(LEGACY_BUS_ROUTES_CACHE_TIME_STORAGE)
-        .catch(() => undefined),
-      options.storage.setItem(BUS_STOPS_STORAGE, JSON.stringify(stops)),
-      options.storage.setItem(BUS_STOPS_CACHE_TIME_STORAGE, new Date((options.now?.() ?? Date.now())).toISOString())
+        .catch(() => undefined)
     ]);
+    // Publish the new stops to in-memory map/search state only after
+    // the primary cache persistence has succeeded. Legacy cleanup
+    // failures have already been contained by the `.catch` handlers
+    // above, so reaching this line means the new cache is safe to
+    // expose to consumers.
+    options.onStopsSynced(stops);
 
     options.setSyncProgress(1);
     options.setSyncLabel(`Synced ${stops.length.toLocaleString()} bus stops`);
