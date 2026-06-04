@@ -188,7 +188,15 @@ anywhere in the workflow.
 
 Triggered by `release: published`, with `needs: validate` and
 `contents: write` so it can attach the APK to the GitHub Release.
-Steps 1–8 mirror the validate job, then:
+The release job shares the same Node setup, `npm ci`, typecheck,
+`expo install --check`, Liberica JDK 17, Android SDK setup, and
+`expo prebuild` steps as the `validate` job. It deliberately does
+**not** re-run the validate-only Python YAML lint of
+`.github/workflows/android.yml`; that check exists to catch
+workflow syntax errors on every push and pull request, and re-running
+it before a release build adds no extra signal beyond the validate
+job that already gates this release job. After the shared setup
+steps, the release job runs:
 
 1. `chmod +x android/gradlew` and `cd android && ./gradlew
    assembleRelease --stacktrace`.

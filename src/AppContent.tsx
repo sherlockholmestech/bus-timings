@@ -46,6 +46,7 @@ import { getServiceRoute, getVisibleStops } from './lib/routeView';
 import { runCloseRoute, runSelectServiceRoute, type RouteAlerter, type RouteRefs, type RouteSetters } from './lib/routeRunner';
 import { createRequestToken, type RequestTokenStore } from './lib/requestToken';
 import { searchBusStops } from './lib/search';
+import { rehydrateSelectedStop } from './lib/selectedStopCache';
 import {
   calculateHeaderHeight,
   calculateOverlayBottomPadding
@@ -276,15 +277,32 @@ export function AppContent({
   // every consumer (drawer, launcher, map, route view, favourites
   // grouping via `busStopsByCode`) sees the updated metadata
   // without a restart. See VAL-CROSS-016.
+  //
+  // When the new cache no longer contains a record with the
+  // selected stop's `BusStopCode` — for example, after an LTA sync
+  // that returned a different bus-stop set, or a manual data
+  // refresh that pruned the local list — the selected stop is
+  // cleared to `null` and `arrivals` is reset to `null` so the
+  // dependent UI (drawer, arrivals, map selected marker/highlight,
+  // map center, and visible-stop filter) cannot continue rendering
+  // stale metadata. The `rehydrateSelectedStop` helper is the
+  // single source of truth for the present/missing branch so the
+  // focused tests in `selectedStopCache.test.ts` can prove the
+  // contract end-to-end.
   useEffect(() => {
-    if (!selectedStop) {
-      return;
-    }
-    const refreshed = busStops.find(
-      (candidate) => candidate.BusStopCode === selectedStop.BusStopCode
-    );
-    if (refreshed && refreshed !== selectedStop) {
-      setSelectedStop(refreshed);
+    const nextSelectedStop = rehydrateSelectedStop(selectedStop, busStops);
+    if (nextSelectedStop === null && selectedStop !== null) {
+      setSelectedStop(null);
+      // Reset arrivals to `null` so the drawer's
+      // `selectedServices` derivation (which keys off the
+      // response's `BusStopCode`) cannot render stale service
+      // rows for a stop that is no longer in the cache. The
+      // per-mode 20-second refresh effect will pick a new
+      // favourites refresh on the next tick so the drawer
+      // gracefully transitions back to favourites mode.
+      setArrivals(null);
+    } else if (nextSelectedStop && nextSelectedStop !== selectedStop) {
+      setSelectedStop(nextSelectedStop);
     }
   }, [busStops, selectedStop]);
 
