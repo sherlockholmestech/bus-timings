@@ -4,31 +4,17 @@ import WebView, { WebViewMessageEvent } from 'react-native-webview';
 
 import { Coordinate } from '../lib/geo';
 import { BusStop } from '../lib/lta';
+import { isBoundsMessage, isStopSelectedMessage, type RawMapMessage } from '../lib/mapMessageValidation';
+import { createMapPayload, type MapPayload } from '../lib/mapPayload';
 import { MapBounds } from '../types';
 
-type MapPayload = {
-  center: Coordinate;
-  routeLines: Coordinate[][];
-  routeServiceNo: string | null;
-  selectedStopCode?: string;
-  stops: BusStop[];
-  theme: 'light' | 'dark';
-  locationFocusRequest: number;
-  bottomInset: number;
-  topInset: number;
-  userLocation: Coordinate | null;
-};
-
-type MapMessage = Partial<MapBounds> & {
-  busStopCode?: string;
-  type: string;
-};
+export type { RawMapMessage, MapMessage } from '../lib/mapMessageValidation';
 
 type LeafletMapProps = {
   center: Coordinate;
   routeLines: Coordinate[][];
   routeServiceNo: string | null;
-  selectedStopCode?: string;
+  selectedStopCode: string | null;
   stops: BusStop[];
   theme: 'light' | 'dark';
   locationFocusRequest: number;
@@ -57,34 +43,35 @@ export function LeafletMap({
   const html = useMemo(() => buildMapHtml(), []);
 
   const payload = useMemo<MapPayload>(
-    () => ({
-      center,
-      routeLines,
-      routeServiceNo,
-      selectedStopCode,
-      stops,
-      theme,
-      locationFocusRequest,
-      bottomInset,
-      topInset,
-      userLocation
-    }),
+    () =>
+      createMapPayload({
+        center,
+        routeLines,
+        routeServiceNo,
+        selectedStopCode,
+        stops,
+        theme,
+        locationFocusRequest,
+        bottomInset,
+        topInset,
+        userLocation
+      }),
     [center, routeLines, routeServiceNo, selectedStopCode, stops, theme, locationFocusRequest, bottomInset, topInset, userLocation]
   );
 
   const onMessage = (event: WebViewMessageEvent) => {
     try {
-      const message = JSON.parse(event.nativeEvent.data) as MapMessage;
-      if (message.type === 'stop-selected' && message.busStopCode) {
+      const message = JSON.parse(event.nativeEvent.data) as RawMapMessage;
+      if (isStopSelectedMessage(message)) {
         onStopSelected(message.busStopCode);
       }
       if (isBoundsMessage(message)) {
         onBoundsChanged({
-          north: Number(message.north),
-          south: Number(message.south),
-          east: Number(message.east),
-          west: Number(message.west),
-          zoom: Number(message.zoom)
+          north: message.north,
+          south: message.south,
+          east: message.east,
+          west: message.west,
+          zoom: message.zoom
         });
       }
     } catch {
@@ -123,17 +110,6 @@ function WebViewBridge({
   }, [payload, webViewRef]);
 
   return null;
-}
-
-function isBoundsMessage(message: MapMessage): message is MapBounds & { type: string } {
-  return (
-    message.type === 'bounds-changed' &&
-    typeof message.north === 'number' &&
-    typeof message.south === 'number' &&
-    typeof message.east === 'number' &&
-    typeof message.west === 'number' &&
-    typeof message.zoom === 'number'
-  );
 }
 
 function buildMapHtml() {
@@ -176,6 +152,13 @@ function buildMapHtml() {
     .popup-title { color: #1a1c1a; font-weight: 800; margin-bottom: 2px; }
     .popup-meta { color: #414942; font-size: 12px; }
     .dark-tiles { filter: brightness(0.72) contrast(1.08) saturate(0.78); }
+    /* The default Leaflet attribution control sits at bottom-right,
+       which the arrivals drawer permanently obscures. We move the
+       Leaflet "topright" container down by a top offset (set from
+       the bridge payload) so the OSM attribution remains visible
+       below the search launcher but above the drawer, in both light
+       and dark themes. */
+    .leaflet-top.leaflet-right { top: 0; }
   </style>
 </head>
 <body>
@@ -190,6 +173,13 @@ function buildMapHtml() {
       updateWhenIdle: true,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
+    // Move the default Leaflet attribution control to the top-right
+    // corner. The default bottom-right position is permanently
+    // hidden by the arrivals drawer; the render() function then
+    // pushes it down by the shell's top inset so it sits below the
+    // search launcher and remains visible in both light and dark
+    // themes. See VAL-MAP-034.
+    map.attributionControl.setPosition('topright');
 
     let markerLayer = L.layerGroup().addTo(map);
     let routeLayer = L.layerGroup().addTo(map);
@@ -197,6 +187,18 @@ function buildMapHtml() {
     let lastSelectedFocusKey = null;
     let lastRouteServiceNo = null;
     let lastLocationFocusRequest = 0;
+    // Tracks the last normal-mode center we honoured from the
+    // bridge payload. When no selected stop, route, or location
+    // focus is controlling the map, the render() function honours
+    // payload.center changes that differ from the previously
+    // applied value. The key is null on the first render so the
+    // initial center (Singapore fallback or available user
+    // location) is applied exactly once. See VAL-MAP-033.
+    let lastNormalCenterKey = null;
+    // Tracks the last top offset we applied to the Leaflet
+    // "topright" container so the OSM attribution sits below the
+    // search launcher in both light and dark themes.
+    let lastAttributionTopPx = -1;
     let boundsTimer = null;
 
     const post = (message) => {
@@ -225,7 +227,7 @@ function buildMapHtml() {
     map.on('moveend zoomend', postBounds);
     map.on('move zoom', scheduleBoundsPost);
 
-    const escapeHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+    const escapeHtml = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (char) => ({
       '&': '&amp;',
       '<': '&lt;',
       '>': '&gt;',
@@ -244,6 +246,20 @@ function buildMapHtml() {
       const tileContainer = tileLayer.getContainer();
       if (tileContainer) {
         tileContainer.classList.toggle('dark-tiles', isDark);
+      }
+
+      // Push the OSM attribution control down by the shell's top
+      // inset so it sits below the search launcher and remains
+      // visible. The top offset is captured in pixels and only
+      // re-applied when the shell reports a new value, so we are
+      // not touching the DOM on every render.
+      const attributionTopPx = (payload.topInset || 0) + 8;
+      if (attributionTopPx !== lastAttributionTopPx) {
+        const topRightContainer = document.querySelector('.leaflet-top.leaflet-right');
+        if (topRightContainer) {
+          topRightContainer.style.top = attributionTopPx + 'px';
+        }
+        lastAttributionTopPx = attributionTopPx;
       }
 
       const routeLines = (payload.routeLines || []).filter((line) => line.length > 1);
@@ -271,6 +287,12 @@ function buildMapHtml() {
         lastRouteServiceNo = payload.routeServiceNo;
       } else if (!payload.routeServiceNo && lastRouteServiceNo) {
         lastRouteServiceNo = null;
+        // Force re-focus on the still-selected stop after the route
+        // view closes. Without this reset, the focus key would
+        // not change and the map would remain route-fitted even
+        // though the selected stop is still active. See
+        // VAL-MAP-028.
+        lastSelectedFocusKey = null;
       }
 
       const selectedFocusKey = payload.selectedStopCode
@@ -318,6 +340,38 @@ function buildMapHtml() {
         lastLocationFocusRequest = payload.locationFocusRequest;
       }
 
+      // Normal-mode center changes: when no selected stop, route,
+      // or explicit location focus is controlling the map, honour
+      // payload.center changes from the React Native shell so the
+      // startup Singapore fallback and available user-location
+      // centering are applied without refocusing on every render
+      // and without fighting the user's pan/zoom gestures. The key
+      // is computed from the center coordinates and applied when
+      // it differs from the previously applied value. The first
+      // render (when lastNormalCenterKey is null) also applies
+      // the center so the initial payload's startup fallback or
+      // user-location center is honoured exactly once. Once
+      // applied, the user is free to pan/zoom without the shell
+      // re-applying the same center on subsequent renders. See
+      // VAL-MAP-033.
+      const isNormalMode = !payload.routeServiceNo && !payload.selectedStopCode && !(payload.userLocation && payload.locationFocusRequest && payload.locationFocusRequest !== lastLocationFocusRequest);
+      const normalCenterKey = isNormalMode
+        ? (Number.isFinite(center.latitude) && Number.isFinite(center.longitude)
+            ? center.latitude.toFixed(6) + ':' + center.longitude.toFixed(6)
+            : null)
+        : null;
+      if (normalCenterKey !== null) {
+        if (lastNormalCenterKey !== normalCenterKey) {
+          // First render (null vs key) and subsequent changes
+          // (oldKey vs newKey) both apply the center; unchanged
+          // re-renders are a no-op so the user is not refought.
+          map.setView([center.latitude, center.longitude], Math.max(map.getZoom(), 12));
+        }
+        lastNormalCenterKey = normalCenterKey;
+      } else {
+        lastNormalCenterKey = null;
+      }
+
       (payload.stops || []).forEach((stop) => {
         const isSelected = stop.BusStopCode === payload.selectedStopCode;
         const darkStyle = isDark
@@ -325,9 +379,15 @@ function buildMapHtml() {
               ? 'background:#4385BE;color:#100F0F;border-color:#4385BE;'
               : 'background:#1C1B1A;color:#4385BE;border-color:#4385BE;')
           : '';
+        // BusStopCode is escaped before being inserted into the
+        // marker HTML so a malformed cached/LTA value cannot
+        // inject DOM into the embedded WebView. The popup below
+        // already escapes Description/RoadName/BusStopCode; the
+        // marker label needed the same treatment to satisfy
+        // VAL-MAP-031.
         const icon = L.divIcon({
           className: '',
-          html: '<div class="bus-marker ' + (isSelected ? 'selected' : '') + '" style="' + darkStyle + '">' + stop.BusStopCode + '</div>',
+          html: '<div class="bus-marker ' + (isSelected ? 'selected' : '') + '" style="' + darkStyle + '">' + escapeHtml(stop.BusStopCode) + '</div>',
           iconSize: [42, 28],
           iconAnchor: [21, 14]
         });
@@ -343,6 +403,14 @@ function buildMapHtml() {
         } else {
           userMarker.setLatLng([payload.userLocation.latitude, payload.userLocation.longitude]);
         }
+      } else if (userMarker) {
+        // payload.userLocation is null: remove the user marker
+        // and clear the local reference so a revoked/cleared/
+        // unavailable location cannot leave a stale blue dot on
+        // the map. Subsequent non-null payloads will recreate the
+        // marker via the branch above. See VAL-MAP-027.
+        map.removeLayer(userMarker);
+        userMarker = null;
       }
 
       scheduleBoundsPost();

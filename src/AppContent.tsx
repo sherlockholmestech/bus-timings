@@ -264,6 +264,29 @@ export function AppContent({
     };
   }, [bootstrap]);
 
+  // Keep the selected stop's metadata in sync with the latest
+  // bus-stop cache. The selected stop is stored by reference, so a
+  // successful sync that replaces the in-memory bus stop list
+  // would otherwise leave the drawer header, the home search
+  // launcher, and the map marker rendering the *old* description,
+  // road name, latitude, and longitude. The sync effect calls
+  // `setBusStops` to replace the array; this effect then promotes
+  // the matching fresh `BusStop` to be the new selected stop so
+  // every consumer (drawer, launcher, map, route view, favourites
+  // grouping via `busStopsByCode`) sees the updated metadata
+  // without a restart. See VAL-CROSS-016.
+  useEffect(() => {
+    if (!selectedStop) {
+      return;
+    }
+    const refreshed = busStops.find(
+      (candidate) => candidate.BusStopCode === selectedStop.BusStopCode
+    );
+    if (refreshed && refreshed !== selectedStop) {
+      setSelectedStop(refreshed);
+    }
+  }, [busStops, selectedStop]);
+
   useEffect(() => {
     // Track the software keyboard height so the settings and search
     // overlays can keep their focused input and bottom action buttons
@@ -680,7 +703,7 @@ export function AppContent({
         center={mapCenter}
         routeLines={selectedRoute.lines}
         routeServiceNo={selectedRouteServiceNo}
-        selectedStopCode={selectedStop?.BusStopCode}
+        selectedStopCode={selectedStop?.BusStopCode ?? null}
         stops={visibleMapStops}
         theme={isDark ? 'dark' : 'light'}
         locationFocusRequest={locationFocusRequest}
