@@ -1,7 +1,24 @@
+// The interactive `favourites` and `settings` actions are rendered with
+// `@expo/ui/jetpack-compose`'s `IconButton` so the touch surface is a
+// native Jetpack Compose control. The surrounding `View` exists only
+// for the absolute positioning required by the shell — the Compose
+// control itself does not have a flexbox-based "row" placement story,
+// so we keep a layout-only React Native wrapper that hosts it. The
+// `matchContents` Host inside the root `App.tsx` is what makes the
+// `IconButton` a real Compose view that honours the same `Host`
+// colorScheme as the rest of the shell.
+//
+// We intentionally keep the React Native `View` borders / sizing
+// visible behind the Compose control so the affordance remains
+// recognisable even when the Compose control is unstyled on first
+// paint. Compose `IconButton` is itself an interactive role, so the
+// underlying semantics already announce it as a button.
+
 import { Settings, Star } from 'lucide-react-native';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { IconButton } from '../ui';
 import { AppTheme } from '../theme';
 import { Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
@@ -41,9 +58,8 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
       </View>
       <View style={styles.actions}>
         <HeaderIconButton
-          accessibilityLabel="Open favourites"
-          pressedBackground={colors.elevation.level4}
-          defaultBackground={colors.elevation.level3}
+          containerColor={colors.elevation.level3}
+          contentColor={colors.secondary}
           borderColor={colors.outlineVariant}
           borderRadius={e.radius.medium}
           onPress={onOpenFavorites}
@@ -51,9 +67,8 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
           <Star color={colors.secondary} fill={colors.secondary} size={21} strokeWidth={2.2} />
         </HeaderIconButton>
         <HeaderIconButton
-          accessibilityLabel="Open settings"
-          pressedBackground={colors.elevation.level4}
-          defaultBackground={colors.elevation.level3}
+          containerColor={colors.elevation.level3}
+          contentColor={colors.onSurface}
           borderColor={colors.outlineVariant}
           borderRadius={e.radius.medium}
           onPress={onOpenSettings}
@@ -65,39 +80,47 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
   );
 }
 
-function HeaderIconButton({
-  accessibilityLabel,
-  pressedBackground,
-  defaultBackground,
-  borderColor,
-  borderRadius,
-  onPress,
-  children,
-}: {
-  accessibilityLabel: string;
-  pressedBackground: string;
-  defaultBackground: string;
+type HeaderIconButtonProps = {
+  containerColor: string;
+  contentColor: string;
   borderColor: string;
   borderRadius: number;
   onPress: () => void;
   children: React.ReactNode;
-}) {
+};
+
+/**
+ * Layout-only React Native wrapper that hosts a Compose `IconButton`.
+ * The wrapper is required because the shell needs absolute positioning
+ * for the header and the Compose `IconButton` does not participate in
+ * React Native flexbox flow. The Compose control itself provides the
+ * click handler and accessibility role.
+ */
+function HeaderIconButton({
+  containerColor,
+  contentColor,
+  borderColor,
+  borderRadius,
+  onPress,
+  children,
+}: HeaderIconButtonProps) {
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.iconButton,
+    <View
+      style={[
+        styles.iconButtonHost,
         {
-          backgroundColor: pressed ? pressedBackground : defaultBackground,
           borderRadius,
           borderColor,
         },
       ]}
     >
-      {children}
-    </Pressable>
+      <IconButton
+        onClick={onPress}
+        colors={{ containerColor, contentColor }}
+      >
+        {children}
+      </IconButton>
+    </View>
   );
 }
 
@@ -121,7 +144,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  iconButton: {
+  iconButtonHost: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     height: 44,

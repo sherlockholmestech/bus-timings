@@ -50,7 +50,7 @@ export function SettingsOverlay({
   const e = theme.expressive;
 
   return (
-    <View style={[styles.overlay, { backgroundColor: colors.background, zIndex: 200 }]}>
+    <View style={[styles.overlay, { backgroundColor: colors.background, zIndex: 220 }]}>
       <View
         style={{
           height: topBarHeight,

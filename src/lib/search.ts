@@ -49,3 +49,16 @@ function scoreSearchResult(query: string, searchable: string, stopCode: string) 
 
   return score - searchable.length * 0.05;
 }
+
+/**
+ * Format the subtitle text for a search result row.
+ *
+ * The validation contract requires the subtitle to read
+ * `${BusStopCode} · ${RoadName}` and the leading stop code to be
+ * available separately in the row, so the renderer relies on this
+ * exact string layout. Centralising the format here means the
+ * contract is unit-testable without a React renderer.
+ */
+export function formatSearchResultSubtitle(stop: BusStop): string {
+  return `${stop.BusStopCode} · ${stop.RoadName}`;
+}

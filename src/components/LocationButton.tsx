@@ -1,7 +1,26 @@
+// The floating location control is a Compose `FloatingActionButton` so
+// the press surface is a real Jetpack Compose Material 3 affordance
+// rather than a React Native `Pressable`. The outer `View` exists only
+// for the absolute positioning required by the shell — Compose's own
+// layout primitives cannot be positioned with React Native flexbox
+// coordinates, so the React Native `View` is a layout-only wrapper
+// that hosts the Compose control. The `matchContents` Host inside the
+// root `App.tsx` is what makes the `FloatingActionButton` a real
+// Compose view that honours the same `Host` colorScheme as the rest of
+// the shell.
+//
+// The lucide `LocateFixed` glyph is rendered inside the
+// `FloatingActionButton.Icon` slot so the icon uses the existing
+// `lucide-react-native` package instead of swapping to a vector
+// drawable. The FAB container colour is hardcoded to the dark-on-dark
+// contrast pair from the previous React Native implementation so the
+// floating control remains visually distinct in both themes.
+
 import { LocateFixed } from 'lucide-react-native';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { FloatingActionButton } from '../ui';
 import { AppTheme } from '../theme';
 import { useTheme } from '../ui/ThemeContext';
 
@@ -24,21 +43,24 @@ export function LocationButton({ bottom, onPress }: LocationButtonProps) {
         },
       ]}
     >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Go to current location"
-        style={({ pressed }) => [
-          styles.button,
+      <View
+        style={[
+          styles.buttonHost,
           {
-            backgroundColor: pressed ? '#282726' : '#100F0F',
             borderRadius: e.radius.medium,
             borderColor: colors.outlineVariant,
           },
         ]}
-        onPress={onPress}
       >
-        <LocateFixed color="#FFFCF0" size={21} strokeWidth={2.3} />
-      </Pressable>
+        <FloatingActionButton
+          onClick={onPress}
+          containerColor={theme.scheme === 'dark' ? '#100F0F' : '#282726'}
+        >
+          <FloatingActionButton.Icon>
+            <LocateFixed color="#FFFCF0" size={21} strokeWidth={2.3} />
+          </FloatingActionButton.Icon>
+        </FloatingActionButton>
+      </View>
     </View>
   );
 }
@@ -49,7 +71,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 10,
   },
-  button: {
+  buttonHost: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     height: 48,

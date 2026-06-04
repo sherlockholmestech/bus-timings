@@ -6,7 +6,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 
-import { searchBusStops } from '../lib/search';
+import { formatSearchResultSubtitle, searchBusStops } from '../lib/search';
 import type { BusStop } from '../lib/lta';
 
 const hotelPacific: BusStop = {
@@ -165,4 +165,23 @@ test('a stop with an exact stop-code match ranks above a fuzzy description match
   // returned for queries that include both signals.
   const combined = searchBusStops(buildStops(), '01012 pacific');
   assert.equal(combined[0]?.BusStopCode, '01012');
+});
+
+test('formatSearchResultSubtitle returns `BusStopCode · RoadName`', () => {
+  assert.equal(formatSearchResultSubtitle(hotelPacific), '01012 · Victoria St');
+  assert.equal(formatSearchResultSubtitle(changiAirport), '95101 · Airport Blvd');
+  assert.equal(formatSearchResultSubtitle(orchardStation), '02013 · Orchard Rd');
+});
+
+test('formatSearchResultSubtitle preserves the exact " · " separator and order', () => {
+  // The validation contract requires the subtitle to read
+  // `${BusStopCode} · ${RoadName}` (with a middle-dot separator and
+  // bus stop code first). Make sure the helper does not drift to a
+  // dash, a colon, or swap the order of fields.
+  const subtitle = formatSearchResultSubtitle(victoriaStreetStop);
+  assert.equal(subtitle, '01029 · Victoria St');
+  assert.ok(subtitle.includes(' · '));
+  const [code, road] = subtitle.split(' · ');
+  assert.equal(code, '01029');
+  assert.equal(road, 'Victoria St');
 });

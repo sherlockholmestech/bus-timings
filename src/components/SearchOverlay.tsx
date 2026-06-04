@@ -3,6 +3,7 @@ import React, { useEffect } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { BusStop } from '../lib/lta';
+import { formatSearchResultSubtitle } from '../lib/search';
 import { AppTheme } from '../theme';
 import {
   OutlinedButton,
@@ -230,7 +231,7 @@ function SearchResultRow({
           {stop.Description}
         </Text>
         <Text variant="bodySmall" numberOfLines={1} style={{ color: colors.onSurfaceVariant, marginTop: 2 }}>
-          {stop.RoadName}
+          {formatSearchResultSubtitle(stop)}
         </Text>
       </View>
     </Pressable>

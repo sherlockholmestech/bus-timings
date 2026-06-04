@@ -337,7 +337,33 @@ export function AppContent({
     closeRoute();
     setQuery('');
     setShowSearch(false);
+    setShowSettings(false);
     bottomSheetRef.current?.snapToIndex(1);
+  };
+
+  const openSettings = () => {
+    // Mutual exclusivity: opening settings from the header always
+    // closes any active search overlay. The Android back priority
+    // already closes settings first, so a single shared `openSettings`
+    // handler keeps the on-press and the back-handler in lockstep.
+    if (showSearch) {
+      Keyboard.dismiss();
+      setQuery('');
+    }
+    setShowSearch(false);
+    setShowSettings(true);
+  };
+
+  const openSearch = () => {
+    // Mutual exclusivity: opening search closes settings so only one
+    // overlay is interactable at a time. The Android back priority
+    // closes settings first when it is visible, then search, so the
+    // visual z-order already matches that order and the handlers
+    // remain consistent with the back-handler branches above.
+    if (showSettings) {
+      setShowSettings(false);
+    }
+    setShowSearch(true);
   };
 
   const selectServiceRoute = (serviceNo: string) => {
@@ -432,13 +458,13 @@ export function AppContent({
         topBarHeight={topBarHeight}
         topInset={topInset}
         onOpenFavorites={openFavorites}
-        onOpenSettings={() => setShowSettings(true)}
+        onOpenSettings={openSettings}
       />
 
       <HomeSearchLauncher
         selectedStop={selectedStop}
         top={searchTop}
-        onOpenSearch={() => setShowSearch(true)}
+        onOpenSearch={openSearch}
       />
 
       <LeafletMap
@@ -531,7 +557,7 @@ export function AppContent({
             setShowSearch(false);
             setQuery('');
           }}
-          onOpenSettings={() => setShowSettings(true)}
+          onOpenSettings={openSettings}
           onSelectStop={(stop) => {
             setShowSearch(false);
             selectStop(stop);

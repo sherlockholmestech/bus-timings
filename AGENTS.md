@@ -8,12 +8,14 @@ Expo/React Native mobile app for Singapore bus arrivals. Uses LTA DataMall API a
 npm install
 npm start                 # Expo dev server
 npm run android           # expo run:android
-npm run ios               # expo run:ios
-npm run web               # expo start --web
-npm run typecheck         # tsc --noEmit (only verification step)
+npm run typecheck         # tsc --noEmit
+npm test                  # node --experimental-strip-types + node:test focused suite
 ```
 
-No tests, lint, or formatter are configured.
+No lint or formatter is configured. `npm test` is the only automated test
+runner; it runs focused tests for the pure helpers and storage/search
+modules with `node:test` and is invoked directly by the mission
+validation contract — there is no Jest/Mocha/equivalent setup.
 
 ## TypeScript
 
@@ -42,7 +44,7 @@ No tests, lint, or formatter are configured.
 ## Android Builds
 
 - `android/` is gitignored but may exist locally after `expo run:android`. Do not commit it.
-- `compile-android.sh` builds a release APK locally by downloading Eclipse Temurin JDK 17 into `./tmp` and running `./gradlew assembleRelease`.
+- `compile-android.sh` builds a release APK locally by downloading a temporary BellSoft Liberica JDK 17 into `./tmp` and running `./gradlew assembleRelease`.
 - EAS Build is the standard path for production (see README).
 
 ## Runtime Requirements
