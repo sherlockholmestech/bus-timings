@@ -1,4 +1,4 @@
-import { BusStop } from './lta';
+import type { BusStop } from './lta';
 
 export function searchBusStops(busStops: BusStop[], query: string) {
   const normalizedQuery = query.trim().toLowerCase();

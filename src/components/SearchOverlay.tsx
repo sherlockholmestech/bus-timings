@@ -1,29 +1,57 @@
 import { X } from 'lucide-react-native';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { BusStop } from '../lib/lta';
 import { AppTheme } from '../theme';
-import { DockedSearchBar, Text } from '../ui';
+import {
+  OutlinedButton,
+  OutlinedTextField,
+  Text,
+  useNativeState,
+} from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 
 type SearchOverlayProps = {
+  /**
+   * Number of bus stops currently cached in the shell. When zero, the
+   * overlay shows a deterministic "no cache" prompt that points the user
+   * to the settings overlay so they can save an AccountKey and run the
+   * bus-stop sync. Stale result rows must never be rendered.
+   */
+  busStopsCount: number;
+  /**
+   * Whether a non-empty LTA AccountKey is currently available to the
+   * shell. Used to tailor the empty-cache guidance so a fresh-install
+   * user is told to save a key before syncing.
+   */
+  hasAccountKey: boolean;
+  /** Current search query controlled by the shell. */
   query: string;
+  /** Search results already scored/limited by `searchBusStops`. */
   results: BusStop[];
   topBarHeight: number;
   topInset: number;
+  /** Called when the user edits the search query. */
   onChangeQuery: (value: string) => void;
+  /** Called when the user closes the search overlay. */
   onClose: () => void;
+  /** Called when the empty-cache prompt asks the user to open settings. */
+  onOpenSettings: () => void;
+  /** Called when the user picks a bus stop from the results. */
   onSelectStop: (stop: BusStop) => void;
 };
 
 export function SearchOverlay({
+  busStopsCount,
+  hasAccountKey,
   query,
   results,
   topBarHeight,
   topInset,
   onChangeQuery,
   onClose,
+  onOpenSettings,
   onSelectStop,
 }: SearchOverlayProps) {
   const theme = useTheme<AppTheme>();
@@ -35,21 +63,73 @@ export function SearchOverlay({
     onClose();
   };
 
-  // Keep the most recent query accessible to event handlers without forcing
-  // the native DockedSearchBar to re-mount on every keystroke.
-  const lastQueryRef = useRef(query);
+  // Compose `DockedSearchBar` does not expose an `autoFocus` prop, so we
+  // mirror the parent-controlled `query` into a Compose `OutlinedTextField`
+  // (which does support `autoFocus`) and bridge edits through
+  // `onChangeQuery`. This is the equivalent reliable focus path that
+  // preserves the existing query/change contract.
+  const nativeQuery = useNativeState(query);
   useEffect(() => {
-    lastQueryRef.current = query;
-  }, [query]);
+    if (nativeQuery.value !== query) {
+      nativeQuery.value = query;
+    }
+  }, [nativeQuery, query]);
 
   const handleQueryChange = (next: string) => {
-    if (next !== lastQueryRef.current) {
+    if (next !== query) {
       onChangeQuery(next);
     }
   };
 
+  const trimmedQuery = query.trim();
+  const isCacheEmpty = busStopsCount === 0;
+
+  let content: React.ReactNode;
+  if (trimmedQuery.length > 0) {
+    content = results.length > 0 ? (
+      results.map((stop, index) => (
+        <SearchResultRow
+          key={stop.BusStopCode}
+          stop={stop}
+          colors={colors}
+          isLast={index === results.length - 1}
+          onPress={() => {
+            Keyboard.dismiss();
+            onSelectStop(stop);
+          }}
+          e={e}
+        />
+      ))
+    ) : (
+      <EmptyState
+        colors={colors}
+        e={e}
+        text="No matching bus stops."
+      />
+    );
+  } else if (isCacheEmpty) {
+    content = (
+      <EmptyCachePrompt
+        hasAccountKey={hasAccountKey}
+        colors={colors}
+        e={e}
+        onOpenSettings={onOpenSettings}
+      />
+    );
+  } else {
+    content = (
+      <EmptyState
+        colors={colors}
+        e={e}
+        text="Search by stop code, road name, or landmark."
+      />
+    );
+  }
+
   return (
-    <View style={[styles.overlay, { backgroundColor: colors.background, zIndex: 210 }]}>
+    <View
+      style={[styles.overlay, { backgroundColor: colors.background, zIndex: 210 }]}
+    >
       <View
         style={{
           height: topBarHeight,
@@ -62,14 +142,25 @@ export function SearchOverlay({
         }}
       >
         <View style={styles.searchBarHost}>
-          <DockedSearchBar onQueryChange={handleQueryChange}>
-            <DockedSearchBar.Placeholder>
-              <SearchPlaceholder color={colors.onSurfaceVariant} text="Search stops" />
-            </DockedSearchBar.Placeholder>
-            <DockedSearchBar.LeadingIcon>
+          <OutlinedTextField
+            value={nativeQuery}
+            onValueChange={handleQueryChange}
+            autoFocus
+            singleLine
+            keyboardOptions={{
+              capitalization: 'none',
+              autoCorrectEnabled: false,
+              keyboardType: 'text',
+              imeAction: 'search'
+            }}
+          >
+            <OutlinedTextField.LeadingIcon>
               <SearchLeadingGlyph color={colors.onSurfaceVariant} />
-            </DockedSearchBar.LeadingIcon>
-          </DockedSearchBar>
+            </OutlinedTextField.LeadingIcon>
+            <OutlinedTextField.Placeholder>
+              <SearchPlaceholder color={colors.onSurfaceVariant} text="Search stops" />
+            </OutlinedTextField.Placeholder>
+          </OutlinedTextField>
         </View>
         <Pressable
           accessibilityRole="button"
@@ -93,45 +184,7 @@ export function SearchOverlay({
         }}
         keyboardShouldPersistTaps="handled"
       >
-        {query.trim() ? (
-          results.length > 0 ? (
-            results.map((stop, index) => (
-              <SearchResultRow
-                key={stop.BusStopCode}
-                stop={stop}
-                colors={colors}
-                isLast={index === results.length - 1}
-                onPress={() => {
-                  Keyboard.dismiss();
-                  onSelectStop(stop);
-                }}
-                e={e}
-              />
-            ))
-          ) : (
-            <Text
-              variant="bodyMedium"
-              style={{
-                color: colors.onSurfaceVariant,
-                textAlign: 'center',
-                marginTop: e.spacing.xl,
-              }}
-            >
-              No matching bus stops.
-            </Text>
-          )
-        ) : (
-          <Text
-            variant="bodyMedium"
-            style={{
-              color: colors.onSurfaceVariant,
-              textAlign: 'center',
-              marginTop: e.spacing.xl,
-            }}
-          >
-            Search by stop code, road name, or landmark.
-          </Text>
-        )}
+        {content}
       </ScrollView>
     </View>
   );
@@ -184,13 +237,77 @@ function SearchResultRow({
   );
 }
 
+function EmptyState({
+  colors,
+  e,
+  text,
+}: {
+  colors: AppTheme['colors'];
+  e: AppTheme['expressive'];
+  text: string;
+}) {
+  return (
+    <Text
+      variant="bodyMedium"
+      style={{
+        color: colors.onSurfaceVariant,
+        textAlign: 'center',
+        marginTop: e.spacing.xl,
+      }}
+    >
+      {text}
+    </Text>
+  );
+}
+
+function EmptyCachePrompt({
+  hasAccountKey,
+  colors,
+  e,
+  onOpenSettings,
+}: {
+  hasAccountKey: boolean;
+  colors: AppTheme['colors'];
+  e: AppTheme['expressive'];
+  onOpenSettings: () => void;
+}) {
+  return (
+    <View
+      style={{
+        alignItems: 'center',
+        marginTop: e.spacing.xl,
+        paddingHorizontal: e.spacing.lg,
+      }}
+    >
+      <Text
+        variant="bodyMedium"
+        style={{
+          color: colors.onSurfaceVariant,
+          textAlign: 'center',
+        }}
+      >
+        {hasAccountKey
+          ? 'No bus stops cached yet. Open settings to sync bus stops.'
+          : 'No bus stops cached yet. Open settings to add your LTA AccountKey and sync bus stops.'}
+      </Text>
+      <View style={{ height: e.spacing.md }} />
+      <OutlinedButton
+        onClick={onOpenSettings}
+        colors={{ contentColor: colors.primary, containerColor: 'transparent' }}
+      >
+        <Text style={{ color: colors.primary, fontWeight: '800' }}>Open settings</Text>
+      </OutlinedButton>
+    </View>
+  );
+}
+
 function SearchPlaceholder({ color, text }: { color: string; text: string }) {
   return <Text style={{ color }}>{text}</Text>;
 }
 
 function SearchLeadingGlyph({ color }: { color: string }) {
-  // The `DockedSearchBar.LeadingIcon` slot expects Compose `Icon` children.
-  // We render a Compose `Text` glyph so the leading affordance is a native
+  // The `OutlinedTextField.LeadingIcon` slot expects Compose children. We
+  // render a Compose `Text` glyph so the leading affordance is a native
   // primitive instead of a vector drawable we do not yet have on disk.
   return <Text style={{ color }}>⌕</Text>;
 }

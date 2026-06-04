@@ -6,6 +6,7 @@ import {
   Alert,
   BackHandler,
   Dimensions,
+  Keyboard,
   Platform,
   StatusBar as NativeStatusBar,
   View
@@ -178,6 +179,10 @@ export function AppContent({
         return true;
       }
       if (showSearch) {
+        // Dismiss the keyboard explicitly so the back press matches the
+        // close button behaviour, which already calls `Keyboard.dismiss`
+        // before invoking the parent's `onClose`.
+        Keyboard.dismiss();
         setShowSearch(false);
         setQuery('');
         return true;
@@ -515,6 +520,8 @@ export function AppContent({
 
       {showSearch && (
         <SearchOverlay
+          busStopsCount={busStops.length}
+          hasAccountKey={accountKey.trim().length > 0}
           query={query}
           results={searchResults}
           topBarHeight={topBarHeight}
@@ -524,6 +531,7 @@ export function AppContent({
             setShowSearch(false);
             setQuery('');
           }}
+          onOpenSettings={() => setShowSettings(true)}
           onSelectStop={(stop) => {
             setShowSearch(false);
             selectStop(stop);
