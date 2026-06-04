@@ -12,6 +12,15 @@
     "platforms": [
       "android"
     ],
+    "plugins": [
+      [
+        "expo-navigation-bar",
+        {
+          "enforceContrast": false,
+          "style": "auto"
+        }
+      ]
+    ],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",

@@ -18,6 +18,14 @@ import { useTheme } from '../ui/ThemeContext';
 
 type SettingsOverlayProps = {
   busStopState: LoadState;
+  /**
+   * Combined bottom padding for the scrollable content. The shell
+   * combines the Android navigation bar / gesture-handle inset with
+   * the current keyboard height and a resting padding so the focused
+   * AccountKey field and the Save / Sync / theme controls stay above
+   * both the system UI and the IME.
+   */
+  contentBottomPadding: number;
   draftKey: string;
   syncLabel: string | null;
   syncProgress: number;
@@ -33,6 +41,7 @@ type SettingsOverlayProps = {
 
 export function SettingsOverlay({
   busStopState,
+  contentBottomPadding,
   draftKey,
   syncLabel,
   syncProgress,
@@ -84,10 +93,15 @@ export function SettingsOverlay({
       <ScrollView
         contentContainerStyle={{
           padding: e.spacing.lg,
-          paddingBottom: e.spacing.xxl,
+          // The shell-supplied `contentBottomPadding` already combines
+          // the Android navigation bar / gesture-handle inset, the
+          // current keyboard height, and a resting padding; we just
+          // use it as the bottom padding for the scroll content.
+          paddingBottom: contentBottomPadding,
           paddingTop: e.spacing.sm,
         }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <Text
           variant="labelLarge"

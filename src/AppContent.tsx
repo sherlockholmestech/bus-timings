@@ -1,16 +1,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
-import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   BackHandler,
   Dimensions,
   Keyboard,
-  Platform,
-  StatusBar as NativeStatusBar,
   View
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from './components/AppHeader';
 import { ArrivalsDrawer, FavoriteArrivalItem } from './components/ArrivalsDrawer';
@@ -34,6 +32,10 @@ import {
 } from './lib/lta';
 import { getServiceRoute, getVisibleStops } from './lib/routeView';
 import { searchBusStops } from './lib/search';
+import {
+  calculateHeaderHeight,
+  calculateOverlayBottomPadding
+} from './lib/shellInsets';
 import { compareServiceNumbers } from './lib/sort';
 import {
   ACCOUNT_KEY_STORAGE,
@@ -50,6 +52,7 @@ const APP_BAR_CONTENT_HEIGHT = 76;
 const SEARCH_BAR_TOP_GAP = 10;
 const SEARCH_BAR_HEIGHT = 66;
 const MAP_TOP_PADDING = 8;
+const OVERLAY_RESTING_PADDING = 32;
 
 type AppContentProps = {
   isDark: boolean;
@@ -87,6 +90,14 @@ export function AppContent({
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomSheetRef = useRef<BottomSheetMethods | null>(null);
   const routeRequestRef = useRef(0);
+  // `useSafeAreaInsets` reports the Android status bar height, display
+  // cutout, navigation bar height (3-button navigation), and gesture
+  // handle height (gesture navigation) for the current effective shell
+  // layout. We add an IME (keyboard) listener below so the full-screen
+  // settings/search overlays can keep their focused input and bottom
+  // actions above the keyboard.
+  const safeAreaInsets = useSafeAreaInsets();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const {
     locateUser,
     requestLocationPermission,
@@ -100,8 +111,9 @@ export function AppContent({
     onStopsSynced: setBusStops,
   });
   const screenHeight = Dimensions.get('window').height;
-  const topInset = Platform.OS === 'android' ? NativeStatusBar.currentHeight ?? 0 : 0;
-  const topBarHeight = topInset + APP_BAR_CONTENT_HEIGHT;
+  const topInset = safeAreaInsets.top;
+  const bottomInset = safeAreaInsets.bottom;
+  const topBarHeight = calculateHeaderHeight(topInset, APP_BAR_CONTENT_HEIGHT);
   const searchTop = topBarHeight + SEARCH_BAR_TOP_GAP;
   const mapTopInset = searchTop + SEARCH_BAR_HEIGHT;
 
@@ -118,6 +130,10 @@ export function AppContent({
   const [sheetIndex, setSheetIndex] = useState(1);
   const currentSheetPosition = sheetIndex === 0 ? peekHeight : openHeight;
   const locationButtonBottom = currentSheetPosition + 16;
+  const overlayBottomPadding = useMemo(
+    () => calculateOverlayBottomPadding(bottomInset, keyboardHeight, OVERLAY_RESTING_PADDING),
+    [bottomInset, keyboardHeight]
+  );
 
   const closeRoute = useCallback(() => {
     setSelectedRouteServiceNo(null);
@@ -171,6 +187,24 @@ export function AppContent({
       }
     };
   }, [bootstrap]);
+
+  useEffect(() => {
+    // Track the software keyboard height so the settings and search
+    // overlays can keep their focused input and bottom action buttons
+    // above the IME. `react-native-safe-area-context` does not include
+    // the keyboard, so we read it from the native `Keyboard` module
+    // and feed it back into the overlay padding calculation.
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      setKeyboardHeight(event.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -448,12 +482,14 @@ export function AppContent({
   const visibleMapStops = selectedRouteServiceNo ? selectedRoute.stops : mapStops;
 
   const mapCenter = selectedStop ? toCoordinate(selectedStop) : userLocation ?? singaporeCenter;
-  const bottomInset = currentSheetPosition;
+  // The Leaflet map inset is driven by the arrivals drawer position so
+  // the visible map area clears the drawer. The overlay bottom padding
+  // is driven by the Android navigation bar / gesture inset and the
+  // current keyboard height — see `overlayBottomPadding` above.
+  const mapBottomInset = currentSheetPosition;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-
       <AppHeader
         topBarHeight={topBarHeight}
         topInset={topInset}
@@ -475,7 +511,7 @@ export function AppContent({
         stops={visibleMapStops}
         theme={isDark ? 'dark' : 'light'}
         locationFocusRequest={locationFocusRequest}
-        bottomInset={bottomInset}
+        bottomInset={mapBottomInset}
         topInset={mapTopInset}
         userLocation={userLocation}
         onBoundsChanged={setMapBounds}
@@ -524,6 +560,7 @@ export function AppContent({
       {showSettings && (
         <SettingsOverlay
           busStopState={syncState}
+          contentBottomPadding={overlayBottomPadding}
           draftKey={draftKey}
           syncLabel={syncLabel}
           syncProgress={syncProgress}
@@ -547,6 +584,7 @@ export function AppContent({
       {showSearch && (
         <SearchOverlay
           busStopsCount={busStops.length}
+          contentBottomPadding={overlayBottomPadding}
           hasAccountKey={accountKey.trim().length > 0}
           query={query}
           results={searchResults}

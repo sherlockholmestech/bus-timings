@@ -9,6 +9,12 @@
 // Compose view that honours the same `Host` colorScheme as the rest of
 // the shell.
 //
+// The outer wrapper is also the React Native accessibility boundary for
+// the icon-only Compose control: we expose
+// `accessibilityRole="button"` and `accessibilityLabel="Go to current
+// location"` on the wrapper so TalkBack can announce the floating
+// action without depending on the lucide `LocateFixed` glyph.
+//
 // The lucide `LocateFixed` glyph is rendered inside the
 // `FloatingActionButton.Icon` slot so the icon uses the existing
 // `lucide-react-native` package instead of swapping to a vector
@@ -36,6 +42,9 @@ export function LocationButton({ bottom, onPress }: LocationButtonProps) {
 
   return (
     <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel="Go to current location"
       style={[
         styles.layer,
         {

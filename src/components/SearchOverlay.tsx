@@ -22,6 +22,14 @@ type SearchOverlayProps = {
    */
   busStopsCount: number;
   /**
+   * Combined bottom padding for the scrollable content. The shell
+   * combines the Android navigation bar / gesture-handle inset with the
+   * current keyboard height and a resting padding so the focused search
+   * field, the result rows, and the empty-cache CTA stay above both the
+   * system UI and the IME.
+   */
+  contentBottomPadding: number;
+  /**
    * Whether a non-empty LTA AccountKey is currently available to the
    * shell. Used to tailor the empty-cache guidance so a fresh-install
    * user is told to save a key before syncing.
@@ -45,6 +53,7 @@ type SearchOverlayProps = {
 
 export function SearchOverlay({
   busStopsCount,
+  contentBottomPadding,
   hasAccountKey,
   query,
   results,
@@ -181,9 +190,14 @@ export function SearchOverlay({
       <ScrollView
         contentContainerStyle={{
           padding: e.spacing.lg,
-          paddingBottom: e.spacing.xxl,
+          // The shell-supplied `contentBottomPadding` already combines
+          // the Android navigation bar / gesture-handle inset, the
+          // current keyboard height, and a resting padding; we just
+          // use it as the bottom padding for the scroll content.
+          paddingBottom: contentBottomPadding,
         }}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {content}
       </ScrollView>

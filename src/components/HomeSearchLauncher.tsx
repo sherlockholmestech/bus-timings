@@ -8,6 +8,13 @@
 // root `App.tsx` is what makes the `Surface` a real Compose view that
 // honours the same `Host` colorScheme as the rest of the shell.
 //
+// The outer wrapper is also the React Native accessibility boundary for
+// the launcher: TalkBack traverses the React Native view tree, not the
+// embedded Compose tree, so we expose `accessibilityRole="button"` and
+// a dynamic `accessibilityLabel` on the wrapper. The label reflects the
+// selected stop when one is present so screen-reader users can hear
+// which stop the launcher represents before activating it.
+//
 // We pass the launcher content as `children` of the `Surface` so the
 // lucide `Search` glyph and the title text remain React Native nodes
 // (Compose's `Text` cannot live outside an enclosing `Host` subtree).
@@ -19,6 +26,7 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { BusStop } from '../lib/lta';
+import { formatSearchResultSubtitle } from '../lib/search';
 import { AppTheme } from '../theme';
 import { ComposeSurface, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
@@ -35,9 +43,15 @@ export function HomeSearchLauncher({ selectedStop, top, onOpenSearch }: HomeSear
   const e = theme.expressive;
 
   const value = selectedStop ? `${selectedStop.BusStopCode} · ${selectedStop.Description}` : '';
+  const accessibilityLabel = selectedStop
+    ? `Open search. Currently showing ${formatSearchResultSubtitle(selectedStop)}`
+    : 'Open search. Search stops';
 
   return (
     <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       style={[
         styles.root,
         {

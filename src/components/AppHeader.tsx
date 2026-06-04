@@ -8,6 +8,15 @@
 // `IconButton` a real Compose view that honours the same `Host`
 // colorScheme as the rest of the shell.
 //
+// The wrapping `View` is also the React Native accessibility boundary
+// for the icon-only Compose control: TalkBack traverses the React
+// Native view tree, not the embedded Compose tree, so we expose the
+// `accessibilityRole="button"` + `accessibilityLabel` pair on the
+// wrapper. This is what lets screen-reader users discover and activate
+// the favourites and settings actions without depending on the icon
+// glyph alone (the icons are decorative Star/Settings vectors that
+// carry no semantic content on their own).
+//
 // We intentionally keep the React Native `View` borders / sizing
 // visible behind the Compose control so the affordance remains
 // recognisable even when the Compose control is unstyled on first
@@ -58,6 +67,7 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
       </View>
       <View style={styles.actions}>
         <HeaderIconButton
+          accessibilityLabel="Open favourites"
           containerColor={colors.elevation.level3}
           contentColor={colors.secondary}
           borderColor={colors.outlineVariant}
@@ -67,6 +77,7 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
           <Star color={colors.secondary} fill={colors.secondary} size={21} strokeWidth={2.2} />
         </HeaderIconButton>
         <HeaderIconButton
+          accessibilityLabel="Open settings"
           containerColor={colors.elevation.level3}
           contentColor={colors.onSurface}
           borderColor={colors.outlineVariant}
@@ -81,6 +92,14 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
 }
 
 type HeaderIconButtonProps = {
+  /**
+   * TalkBack-readable label for the icon-only Compose control. The
+   * label is exposed on the React Native wrapper that hosts the
+   * Compose `IconButton` so that screen-reader users can discover and
+   * activate the action. Keep the label short and action-oriented
+   * (e.g. "Open favourites", "Open settings").
+   */
+  accessibilityLabel: string;
   containerColor: string;
   contentColor: string;
   borderColor: string;
@@ -93,10 +112,13 @@ type HeaderIconButtonProps = {
  * Layout-only React Native wrapper that hosts a Compose `IconButton`.
  * The wrapper is required because the shell needs absolute positioning
  * for the header and the Compose `IconButton` does not participate in
- * React Native flexbox flow. The Compose control itself provides the
- * click handler and accessibility role.
+ * React Native flexbox flow. The wrapper is also the React Native
+ * accessibility boundary for the icon-only Compose control, so we
+ * expose `accessibilityRole="button"` and an `accessibilityLabel` here
+ * for TalkBack.
  */
 function HeaderIconButton({
+  accessibilityLabel,
   containerColor,
   contentColor,
   borderColor,
@@ -106,6 +128,9 @@ function HeaderIconButton({
 }: HeaderIconButtonProps) {
   return (
     <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       style={[
         styles.iconButtonHost,
         {
