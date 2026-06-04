@@ -148,13 +148,22 @@ async function fetchFilteredBusRoutesForService(
     const url = `${LTA_BASE_URL}/BusRoutes?$filter=${filter}&$skip=${skip}`;
     const page = await request<ODataResponse<RawBusRoute>>(url, accountKey, fetchImpl);
     const values = page.value ?? [];
+    // Defensively filter the response to the requested service number.
+    // Some DataMall accounts/environments return rows for adjacent
+    // services when the OData filter is partially applied; a
+    // mismatched row must not be allowed to render the wrong route or
+    // suppress the scan-fallback path. Anything that does not match is
+    // dropped here, and the caller treats an empty result as "no
+    // filtered rows" so the scan fallback can run.
     routes.push(
-      ...values.map((route) => ({
-        serviceNo: route.ServiceNo,
-        direction: route.Direction,
-        sequence: route.StopSequence,
-        busStopCode: route.BusStopCode,
-      }))
+      ...values
+        .filter((route) => route.ServiceNo === serviceNo)
+        .map((route) => ({
+          serviceNo: route.ServiceNo,
+          direction: route.Direction,
+          sequence: route.StopSequence,
+          busStopCode: route.BusStopCode,
+        }))
     );
 
     if (values.length < PAGE_SIZE) {
@@ -201,6 +210,15 @@ export function minutesUntilArrival(estimatedArrival: string) {
   }
 
   const arrivalMs = new Date(estimatedArrival).getTime();
+  // Malformed or non-ISO timestamps produce a NaN `getTime()`. Treat
+  // them as "no active arrival" so the UI never renders `NaNm`,
+  // negative minutes, or other nonsensical values. The number type is
+  // preserved for callers that distinguish "infinity" (no data) from
+  // finite minutes via `Number.isFinite`.
+  if (!Number.isFinite(arrivalMs)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
   const diffMs = arrivalMs - Date.now();
   return Math.max(0, Math.round(diffMs / 60000));
 }

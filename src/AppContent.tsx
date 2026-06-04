@@ -31,6 +31,7 @@ import {
   fetchBusRoutesForService
 } from './lib/lta';
 import { getServiceRoute, getVisibleStops } from './lib/routeView';
+import { createRequestToken, type RequestTokenStore } from './lib/requestToken';
 import { searchBusStops } from './lib/search';
 import {
   calculateHeaderHeight,
@@ -90,6 +91,23 @@ export function AppContent({
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomSheetRef = useRef<BottomSheetMethods | null>(null);
   const routeRequestRef = useRef(0);
+  // Staleness guards for in-flight selected-stop and favourite arrivals
+  // requests. Each live-data flow captures a token before the await and
+  // re-checks the store after the promise resolves. If a newer request
+  // (or an AccountKey/stop/mode change) has captured a token in the
+  // meantime, the older response is dropped so stale AccountKey,
+  // stale stop, or stale favourites data cannot update
+  // `arrivalState`, `lastUpdated`, `arrivals`, `favoriteArrivals`, or
+  // the user-visible alert. The stores are lazy-initialised in a ref
+  // so the same counter instance is reused across renders.
+  const arrivalTokenStoreRef = useRef<RequestTokenStore | null>(null);
+  const favoriteArrivalTokenStoreRef = useRef<RequestTokenStore | null>(null);
+  if (arrivalTokenStoreRef.current === null) {
+    arrivalTokenStoreRef.current = createRequestToken();
+  }
+  if (favoriteArrivalTokenStoreRef.current === null) {
+    favoriteArrivalTokenStoreRef.current = createRequestToken();
+  }
   // `useSafeAreaInsets` reports the Android status bar height, display
   // cutout, navigation bar height (3-button navigation), and gesture
   // handle height (gesture navigation) for the current effective shell
@@ -267,13 +285,25 @@ export function AppContent({
       return;
     }
 
+    const tokenStore = arrivalTokenStoreRef.current;
+    if (!tokenStore) {
+      return;
+    }
+    const token = tokenStore.capture();
+    const stopCode = selectedStop.BusStopCode;
     setArrivalState('loading');
     try {
-      const response = await fetchArrivals(accountKey.trim(), selectedStop.BusStopCode);
+      const response = await fetchArrivals(accountKey.trim(), stopCode);
+      if (!tokenStore.isCurrent(token) || response.BusStopCode !== stopCode) {
+        return;
+      }
       setArrivals(response);
       setLastUpdated(formatClockTime());
       setArrivalState('idle');
     } catch (error) {
+      if (!tokenStore.isCurrent(token)) {
+        return;
+      }
       setArrivalState('error');
       Alert.alert('Could not load arrivals', errorMessage(error));
     }
@@ -285,11 +315,22 @@ export function AppContent({
       return;
     }
 
+    const tokenStore = favoriteArrivalTokenStoreRef.current;
+    if (!tokenStore) {
+      return;
+    }
+    const token = tokenStore.capture();
+    const accountKeyAtRequest = accountKey.trim();
     setFavoriteArrivalState('loading');
     try {
       const responses = await Promise.all(
-        favoriteStopCodes.map((busStopCode) => fetchArrivals(accountKey.trim(), busStopCode))
+        favoriteStopCodes.map((busStopCode) =>
+          fetchArrivals(accountKeyAtRequest, busStopCode)
+        )
       );
+      if (!tokenStore.isCurrent(token)) {
+        return;
+      }
       setFavoriteArrivals(
         responses.reduce<Record<string, BusArrivalResponse>>((byStopCode, response) => {
           byStopCode[response.BusStopCode] = response;
@@ -299,6 +340,9 @@ export function AppContent({
       setLastUpdated(formatClockTime());
       setFavoriteArrivalState('idle');
     } catch (error) {
+      if (!tokenStore.isCurrent(token)) {
+        return;
+      }
       setFavoriteArrivalState('error');
       Alert.alert('Could not load favourite arrivals', errorMessage(error));
     }
@@ -308,6 +352,16 @@ export function AppContent({
     if (arrivalTimer.current) {
       clearInterval(arrivalTimer.current);
     }
+
+    // Invalidate any in-flight arrival/favourite request from a previous
+    // AccountKey, selected stop, or favourites set so a late response
+    // cannot update `lastUpdated`, `arrivalState`, `arrivals`,
+    // `favoriteArrivals`, or the user-visible alert after the new
+    // AccountKey has been applied. The next `loadArrivals` /
+    // `loadFavoriteArrivals` call (if the new AccountKey is non-empty)
+    // captures a fresh token.
+    arrivalTokenStoreRef.current?.invalidate();
+    favoriteArrivalTokenStoreRef.current?.invalidate();
 
     if (!accountKey.trim()) {
       return;
