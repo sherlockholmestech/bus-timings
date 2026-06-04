@@ -16,6 +16,7 @@ import {
   groupFavoriteItems,
   isFavoriteService,
   normalizeFavorites,
+  partitionFavoriteArrivals,
   toggleFavoriteInList
 } from '../lib/favorites';
 import type { BusArrivalResponse, BusStop } from '../lib/lta';
@@ -311,5 +312,111 @@ test('groupFavoriteItems resolves the group stop from the first item that suppli
   );
   const groups = groupFavoriteItems(items);
   assert.equal(groups[0]?.stop?.Description, 'Hotel Grand Pacific');
+});
+
+function makeArrivalResponse(busStopCode: string, serviceNo: string): BusArrivalResponse {
+  return {
+    BusStopCode: busStopCode,
+    Services: [makeService(serviceNo, 'SBST', '2026-06-04T10:00:00Z')],
+  };
+}
+
+test('partitionFavoriteArrivals returns an empty map for an empty favourites list', () => {
+  const result = partitionFavoriteArrivals(
+    [],
+    {
+      '01012': makeArrivalResponse('01012', '2'),
+    }
+  );
+  assert.deepEqual(result, {});
+});
+
+test('partitionFavoriteArrivals returns an empty map for an empty arrival map', () => {
+  const result = partitionFavoriteArrivals(
+    [{ busStopCode: '01012', serviceNo: '2' }],
+    {}
+  );
+  assert.deepEqual(result, {});
+});
+
+test('partitionFavoriteArrivals keeps entries for stops in the current favourites set', () => {
+  const result = partitionFavoriteArrivals(
+    [{ busStopCode: '01012', serviceNo: '2' }],
+    {
+      '01012': makeArrivalResponse('01012', '2'),
+    }
+  );
+  assert.equal(Object.keys(result).length, 1);
+  assert.equal(result['01012']?.BusStopCode, '01012');
+});
+
+test('partitionFavoriteArrivals drops stale entries for removed favourites', () => {
+  // The real scrutiny bug: a user had favourites at stop A and
+  // stop B, both with live arrival responses in the map. The
+  // user removes stop B, so the current favourites set is
+  // [{A, 2}]. The stale B entry in the arrival map must not
+  // make the drawer's first-load pending detection think the
+  // current favourites are already loaded — otherwise the
+  // drawer renders completed empty rows ("No active arrival")
+  // for A's favourites instead of the loading indicator while
+  // the new-key/new-favourites fetch is in flight.
+  const result = partitionFavoriteArrivals(
+    [{ busStopCode: '01012', serviceNo: '2' }],
+    {
+      '01012': makeArrivalResponse('01012', '2'),
+      '02001': makeArrivalResponse('02001', '12'),
+    }
+  );
+  assert.deepEqual(Object.keys(result).sort(), ['01012']);
+  assert.equal(result['01012']?.BusStopCode, '01012');
+  assert.equal(result['02001'], undefined, 'stale B entry is dropped');
+});
+
+test('partitionFavoriteArrivals drops stale entries when all old favourites are removed', () => {
+  // The user removes every old favourite and adds a brand new
+  // favourite at a different stop. The arrival map still has
+  // responses for the old stops from previous refreshes. The
+  // partition must drop those stale entries so the first-load
+  // detection shows the loading indicator for the new
+  // favourite.
+  const result = partitionFavoriteArrivals(
+    [{ busStopCode: '03003', serviceNo: '5' }],
+    {
+      '01012': makeArrivalResponse('01012', '2'),
+      '02001': makeArrivalResponse('02001', '12'),
+    }
+  );
+  assert.deepEqual(result, {});
+});
+
+test('partitionFavoriteArrivals keeps entries for stops referenced by multiple favourites', () => {
+  // Two favourites at the same stop but different services. The
+  // partition is keyed by stop code, so the stop's response
+  // entry must be kept (the rendering pipeline looks up by
+  // stop code in `getFavoriteItems`).
+  const result = partitionFavoriteArrivals(
+    [
+      { busStopCode: '01012', serviceNo: '2' },
+      { busStopCode: '01012', serviceNo: '12' },
+    ],
+    {
+      '01012': makeArrivalResponse('01012', '2'),
+    }
+  );
+  assert.equal(Object.keys(result).length, 1);
+  assert.equal(result['01012']?.BusStopCode, '01012');
+});
+
+test('partitionFavoriteArrivals does not mutate the input arrival map', () => {
+  const input: Record<string, BusArrivalResponse> = {
+    '01012': makeArrivalResponse('01012', '2'),
+    '02001': makeArrivalResponse('02001', '12'),
+  };
+  const inputSnapshot = JSON.parse(JSON.stringify(input));
+  partitionFavoriteArrivals(
+    [{ busStopCode: '01012', serviceNo: '2' }],
+    input
+  );
+  assert.deepEqual(input, inputSnapshot, 'input arrival map is not mutated');
 });
 

@@ -19,6 +19,7 @@ import { SearchOverlay } from './components/SearchOverlay';
 import { SettingsOverlay } from './components/SettingsOverlay';
 import { useBusDataSync } from './hooks/useBusDataSync';
 import { useUserLocation } from './hooks/useUserLocation';
+import { invalidateRouteAndSyncTokens } from './lib/accountKeyRebinding';
 import {
   runFavoriteArrivals,
   runSelectedStopArrivals,
@@ -31,6 +32,7 @@ import {
   FavoriteArrivalItem,
   getFavoriteItems,
   normalizeFavorites,
+  partitionFavoriteArrivals,
   toggleFavoriteInList
 } from './lib/favorites';
 import { singaporeCenter, toCoordinate } from './lib/geo';
@@ -465,6 +467,22 @@ export function AppContent({
 
   const saveAccountKey = async () => {
     const trimmed = draftKey.trim();
+    // Synchronously invalidate the route and bus-stop sync request
+    // token stores BEFORE `setAccountKey` and the `AsyncStorage.setItem`
+    // await. The shell's commit effect also invalidates the same
+    // stores on `[accountKey, ...]`, but that effect runs *after* the
+    // next render — too late to catch a route or sync response that
+    // resolves during the `setItem` microtask. Bumping the tokens
+    // here closes that window so an old-key route response cannot
+    // update `busRoutes` / `routeState` / `selectedRouteServiceNo`
+    // / the user-visible alert, and an old-key sync response cannot
+    // update progress, write `lta.busStops` / `lta.busStops.cachedAt`,
+    // remove the legacy route cache keys, publish the in-memory stop
+    // list, or alert.
+    invalidateRouteAndSyncTokens({
+      routeRequestTokenStore: routeRequestTokenStoreRef.current,
+      invalidateSyncRequest,
+    });
     setAccountKey(trimmed);
     await AsyncStorage.setItem(ACCOUNT_KEY_STORAGE, trimmed);
     if (trimmed && busStops.length === 0) {
@@ -586,6 +604,23 @@ export function AppContent({
     () => getFavoriteItems(favorites, favoriteArrivals, busStops),
     [busStops, favoriteArrivals, favorites]
   );
+  // Partition the favourite arrival map down to entries for bus
+  // stops that the *current* favourites set still references. The
+  // raw `favoriteArrivals` map accumulates responses over time, so
+  // it can carry stale entries for stops the user has since
+  // unstarred. The drawer's first-load pending detection uses the
+  // presence of live data as a proxy for "have we received a
+  // response for the current favourites set?", so a stale entry
+  // for a removed favourite would otherwise trick the detection
+  // into believing the current favourites are already loaded and
+  // render completed empty rows ("No active arrival") instead of
+  // the loading indicator. The partition is the source of truth
+  // for both the rendering pipeline and the first-load flag.
+  const liveFavoriteArrivals = useMemo(
+    () => partitionFavoriteArrivals(favorites, favoriteArrivals),
+    [favorites, favoriteArrivals]
+  );
+  const hasLiveFavoriteArrivals = Object.keys(liveFavoriteArrivals).length > 0;
   const selectedRoute = useMemo(
     () => getServiceRoute(busRoutes, busStopsByCode, selectedRouteServiceNo),
     [busRoutes, busStopsByCode, selectedRouteServiceNo]
@@ -662,7 +697,7 @@ export function AppContent({
         favoriteArrivalState={favoriteArrivalState}
         favoriteItems={favoriteItems}
         favorites={favorites}
-        hasFavoriteArrivals={Object.keys(favoriteArrivals).length > 0}
+        hasFavoriteArrivals={hasLiveFavoriteArrivals}
         lastUpdated={activeLastUpdated}
         routeState={routeState}
         routeView={selectedRoute}

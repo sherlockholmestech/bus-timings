@@ -153,6 +153,51 @@ export function toggleFavoriteInList(
 }
 
 /**
+ * Filter the favourite arrival map down to entries for bus stop
+ * codes that are referenced by the *current* favourites set.
+ *
+ * The favourite arrival map is a `Record<busStopCode, BusArrivalResponse>`
+ * that accumulates live LTA responses over time. The shell cannot
+ * tell the runner to drop entries for stops the user has since
+ * unstarred — the runner only writes what LTA returned for the
+ * favourite stop codes it was asked about. Stale entries for
+ * removed favourites therefore linger in the map until the next
+ * refresh cycle for the new favourites set lands.
+ *
+ * The favourites drawer's first-load pending detection uses the
+ * presence of live data as a proxy for "have we received a
+ * response for the current favourites set?". A stale entry for a
+ * removed favourite would otherwise trick the detection into
+ * believing the current favourites are already loaded and render
+ * completed empty rows ("No active arrival") instead of the
+ * loading indicator. This helper partitions the map so the
+ * detection (and the rendering pipeline) only sees live data for
+ * bus stops the user still cares about.
+ *
+ * The function is intentionally pure: it returns a new
+ * `Record<string, BusArrivalResponse>` and never mutates the
+ * input. Callers typically feed the result into a `useMemo` whose
+ * dependencies are `favorites` and `favoriteArrivals`.
+ */
+export function partitionFavoriteArrivals(
+  favorites: readonly FavoriteService[],
+  favoriteArrivals: Readonly<Record<string, BusArrivalResponse>>
+): Record<string, BusArrivalResponse> {
+  const stopCodes = new Set<string>();
+  for (const favorite of favorites) {
+    stopCodes.add(favorite.busStopCode);
+  }
+  const result: Record<string, BusArrivalResponse> = {};
+  for (const code of stopCodes) {
+    const response = favoriteArrivals[code];
+    if (response) {
+      result[code] = response;
+    }
+  }
+  return result;
+}
+
+/**
  * Build the per-favourite items the drawer renders.
  *
  * Each favourite is paired with:
