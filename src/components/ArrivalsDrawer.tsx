@@ -1,27 +1,22 @@
 import { BottomSheet, BottomSheetScrollView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { RefreshCw, X, Star } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
+import {
+  type FavoriteArrivalGroup,
+  type FavoriteArrivalItem,
+  groupFavoriteItems
+} from '../lib/favorites';
 import { BusServiceArrival, BusStop } from '../lib/lta';
 import { ServiceRouteView } from '../lib/routeView';
-import { compareBusStopCodes, compareServiceNumbers } from '../lib/sort';
 import { AppTheme } from '../theme';
 import { FavoriteService, LoadState } from '../types';
 import { ActivityIndicator, HorizontalDivider, IconButton, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 import { ArrivalRow } from './ArrivalRow';
 
-export type FavoriteArrivalItem = FavoriteService & {
-  stop?: BusStop;
-  service: BusServiceArrival;
-};
-
-type FavoriteArrivalGroup = {
-  busStopCode: string;
-  stop?: BusStop;
-  items: FavoriteArrivalItem[];
-};
+export type { FavoriteArrivalItem } from '../lib/favorites';
 
 type ArrivalsDrawerProps = {
   arrivalState: LoadState;
@@ -69,6 +64,9 @@ export function ArrivalsDrawer({
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
   const e = theme.expressive;
+  // The grouping/sorting is delegated to the pure helper so the
+  // drawer renders numeric-ordered, de-duplicated favourite
+  // sections. The drawer only owns the visual presentation.
   const favoriteGroups = React.useMemo(() => groupFavoriteItems(favoriteItems), [favoriteItems]);
   const drawerContent = selectedRouteServiceNo ? (
     <RouteView
@@ -404,21 +402,33 @@ function FavoriteStopGroup({
   const colors = theme.colors;
   const e = theme.expressive;
 
+  // The section header doubles as a Pressable to select the bus
+  // stop. The accessibility label and role make the action
+  // TalkBack-discoverable so screen-reader users can navigate from
+  // a favourite group back to its stop the same way sighted users
+  // tap the stop code.
   return (
     <View>
-      <View
-        style={{
-          backgroundColor: colors.surface,
-          borderBottomColor: colors.outlineVariant,
-          borderBottomWidth: StyleSheet.hairlineWidth,
-          paddingHorizontal: e.spacing.lg,
-          paddingTop: e.spacing.md,
-          paddingBottom: e.spacing.sm,
-        }}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={
+          group.stop
+            ? `Select stop ${group.busStopCode} ${group.stop.Description}`
+            : `Select stop ${group.busStopCode}`
+        }
+        onPress={() => onSelectFavoriteStop(group.busStopCode)}
+        style={({ pressed }) => [
+          styles.groupHeader,
+          {
+            backgroundColor: pressed ? colors.elevation.level2 : colors.surface,
+            paddingHorizontal: e.spacing.lg,
+            paddingTop: e.spacing.md,
+            paddingBottom: e.spacing.sm,
+          },
+        ]}
       >
         <Text
           variant="labelLarge"
-          onPress={() => onSelectFavoriteStop(group.busStopCode)}
           style={{ color: colors.primary, fontWeight: '900' }}
         >
           {group.busStopCode}
@@ -433,7 +443,7 @@ function FavoriteStopGroup({
             {group.stop.RoadName}
           </Text>
         ) : null}
-      </View>
+      </Pressable>
       {group.items.map((item) => (
         <ArrivalRow
           key={`${item.busStopCode}:${item.serviceNo}`}
@@ -552,16 +562,20 @@ function RouteView({
               </Text>
             </View>
             {direction.stops.map(({ sequence, stop }) => (
-              <View
+              <Pressable
                 key={`${direction.direction}:${sequence}:${stop.BusStopCode}`}
-                style={{
-                  borderBottomColor: colors.outlineVariant,
-                  borderBottomWidth: StyleSheet.hairlineWidth,
-                  flexDirection: 'row',
-                  gap: e.spacing.md,
-                  marginHorizontal: e.spacing.lg,
-                  paddingVertical: e.spacing.md,
-                }}
+                accessibilityRole="button"
+                accessibilityLabel={`Select stop ${stop.BusStopCode} ${stop.Description}`}
+                onPress={() => onSelectFavoriteStop(stop.BusStopCode)}
+                style={({ pressed }) => [
+                  styles.routeStopRow,
+                  {
+                    borderBottomColor: colors.outlineVariant,
+                    marginHorizontal: e.spacing.lg,
+                    paddingVertical: e.spacing.md,
+                    backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+                  },
+                ]}
               >
                 <Text
                   variant="labelLarge"
@@ -573,7 +587,6 @@ function RouteView({
                   <Text
                     variant="titleSmall"
                     numberOfLines={1}
-                    onPress={() => onSelectFavoriteStop(stop.BusStopCode)}
                     style={{ color: colors.onSurface, fontWeight: '900' }}
                   >
                     {stop.Description}
@@ -586,37 +599,13 @@ function RouteView({
                     {stop.BusStopCode} · {stop.RoadName}
                   </Text>
                 </View>
-              </View>
+              </Pressable>
             ))}
           </View>
         ))
       )}
     </>
   );
-}
-
-function groupFavoriteItems(items: FavoriteArrivalItem[]) {
-  const groupsByStop = new Map<string, FavoriteArrivalGroup>();
-
-  for (const item of items) {
-    const group = groupsByStop.get(item.busStopCode);
-    if (group) {
-      group.items.push(item);
-    } else {
-      groupsByStop.set(item.busStopCode, {
-        busStopCode: item.busStopCode,
-        stop: item.stop,
-        items: [item],
-      });
-    }
-  }
-
-  return [...groupsByStop.values()]
-    .sort((a, b) => compareBusStopCodes(a.busStopCode, b.busStopCode))
-    .map((group) => ({
-      ...group,
-      items: [...group.items].sort((a, b) => compareServiceNumbers(a.serviceNo, b.serviceNo)),
-    }));
 }
 
 const styles = StyleSheet.create({
@@ -639,5 +628,13 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     width: 40,
+  },
+  groupHeader: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  routeStopRow: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 12,
   },
 });

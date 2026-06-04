@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from './components/AppHeader';
-import { ArrivalsDrawer, FavoriteArrivalItem } from './components/ArrivalsDrawer';
+import { ArrivalsDrawer } from './components/ArrivalsDrawer';
 import { HomeSearchLauncher } from './components/HomeSearchLauncher';
 import { LeafletMap } from './components/LeafletMap';
 import { LocationButton } from './components/LocationButton';
@@ -27,16 +27,20 @@ import {
   type ArrivalSetters
 } from './lib/arrivalRunner';
 import { loadBootstrapState } from './lib/bootstrap';
-import { errorMessage } from './lib/errors';
-import { compareFavorites, createEmptyService } from './lib/favorites';
+import {
+  FavoriteArrivalItem,
+  getFavoriteItems,
+  normalizeFavorites,
+  toggleFavoriteInList
+} from './lib/favorites';
 import { singaporeCenter, toCoordinate } from './lib/geo';
 import {
   BusArrivalResponse,
   BusRoute,
-  BusStop,
-  fetchBusRoutesForService
+  BusStop
 } from './lib/lta';
 import { getServiceRoute, getVisibleStops } from './lib/routeView';
+import { runCloseRoute, runSelectServiceRoute, type RouteAlerter, type RouteRefs, type RouteSetters } from './lib/routeRunner';
 import { createRequestToken, type RequestTokenStore } from './lib/requestToken';
 import { searchBusStops } from './lib/search';
 import {
@@ -104,18 +108,19 @@ export function AppContent({
 
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomSheetRef = useRef<BottomSheetMethods | null>(null);
-  const routeRequestRef = useRef(0);
-  // Staleness guards for in-flight selected-stop and favourite arrivals
-  // requests. Each live-data flow captures a token before the await and
-  // re-checks the store after the promise resolves. If a newer request
-  // (or an AccountKey/stop/mode change) has captured a token in the
-  // meantime, the older response is dropped so stale AccountKey,
-  // stale stop, or stale favourites data cannot update
-  // `arrivalState`, `lastUpdated`, `arrivals`, `favoriteArrivals`, or
-  // the user-visible alert. The stores are lazy-initialised in a ref
-  // so the same counter instance is reused across renders.
+  // Staleness guards for in-flight selected-stop, favourite arrivals,
+  // and service route requests. Each live-data flow captures a token
+  // before the await and re-checks the store after the promise
+  // resolves. If a newer request (or an AccountKey/stop/mode/service
+  // change) has captured a token in the meantime, the older response
+  // is dropped so stale data cannot update `arrivalState`,
+  // `lastUpdated`, `arrivals`, `favoriteArrivals`, `routeState`,
+  // `busRoutes`, or the user-visible alert. The stores are
+  // lazy-initialised in a ref so the same counter instance is reused
+  // across renders.
   const arrivalTokenStoreRef = useRef<RequestTokenStore | null>(null);
   const favoriteArrivalTokenStoreRef = useRef<RequestTokenStore | null>(null);
+  const routeRequestTokenStoreRef = useRef<RequestTokenStore | null>(null);
   // Re-entry guards for the two live-data modes. They serialise manual
   // refresh taps and 20-second timer ticks so a single mode never
   // launches overlapping fetches — even if the refresh button is
@@ -130,6 +135,9 @@ export function AppContent({
   }
   if (favoriteArrivalTokenStoreRef.current === null) {
     favoriteArrivalTokenStoreRef.current = createRequestToken();
+  }
+  if (routeRequestTokenStoreRef.current === null) {
+    routeRequestTokenStoreRef.current = createRequestToken();
   }
   // `useSafeAreaInsets` reports the Android status bar height, display
   // cutout, navigation bar height (3-button navigation), and gesture
@@ -176,11 +184,27 @@ export function AppContent({
     [bottomInset, keyboardHeight]
   );
 
+  // The route runner owns the request token store, the loading
+  // transitions, and the empty/error/stale paths. `closeRoute` is
+  // the runner's synchronous close helper; the route handler below
+  // delegates to the async runner for the open/load/success/error
+  // branches. Both share the same `RequestTokenStore` ref so an
+  // in-flight open request is invalidated when the user closes the
+  // view, and an in-flight open request is invalidated when the
+  // user opens a different service.
   const closeRoute = useCallback(() => {
-    setSelectedRouteServiceNo(null);
-    setBusRoutes([]);
-    setRouteState('idle');
-    routeRequestRef.current += 1;
+    const routeRequestTokenStore = routeRequestTokenStoreRef.current;
+    if (!routeRequestTokenStore) {
+      return;
+    }
+    runCloseRoute({
+      refs: { routeRequestTokenStore },
+      setters: {
+        setSelectedRouteServiceNo,
+        setBusRoutes,
+        setRouteState,
+      },
+    });
   }, []);
 
   const selectStop = useCallback(
@@ -214,7 +238,12 @@ export function AppContent({
     }
 
     if (restoredFavorites.length > 0) {
-      setFavorites(restoredFavorites);
+      // Normalise restored favourites so duplicate or unsorted
+      // entries from a corrupted `lta.favoriteServices` JSON can
+      // never render duplicate drawer rows or trigger duplicate
+      // AsyncStorage writes. The helper also drops any entries that
+      // fail `isFavoriteService`, mirroring the bootstrap filter.
+      setFavorites(normalizeFavorites(restoredFavorites));
     }
 
     void locateUser();
@@ -429,18 +458,9 @@ export function AppContent({
   };
 
   const toggleFavorite = async (favorite: FavoriteService) => {
-    const exists = favorites.some(
-      (candidate) =>
-        candidate.busStopCode === favorite.busStopCode &&
-        candidate.serviceNo === favorite.serviceNo
-    );
-    const nextFavorites = exists
-      ? favorites.filter(
-          (candidate) =>
-            candidate.busStopCode !== favorite.busStopCode ||
-            candidate.serviceNo !== favorite.serviceNo
-        )
-      : [...favorites, favorite].sort(compareFavorites);
+    // The pure helper handles add/remove, de-duplication, and
+    // numeric sorting so the persisted list is always stable.
+    const nextFavorites = toggleFavoriteInList(favorites, favorite);
 
     setFavorites(nextFavorites);
     await AsyncStorage.setItem(FAVORITES_STORAGE, JSON.stringify(nextFavorites));
@@ -487,48 +507,43 @@ export function AppContent({
     setShowSearch(true);
   };
 
-  const selectServiceRoute = (serviceNo: string) => {
-    if (selectedRouteServiceNo === serviceNo) {
-      setSelectedRouteServiceNo(null);
-      setBusRoutes([]);
-      setRouteState('idle');
-      routeRequestRef.current += 1;
-      return;
-    }
-
-    if (!accountKey.trim()) {
-      setShowSettings(true);
-      return;
-    }
-
-    setSelectedRouteServiceNo(serviceNo);
-    setBusRoutes([]);
-    setRouteState('loading');
-    bottomSheetRef.current?.snapToIndex(1);
-    const routeRequest = routeRequestRef.current + 1;
-    routeRequestRef.current = routeRequest;
-    void fetchBusRoutesForService(accountKey.trim(), serviceNo)
-      .then((routes) => {
-        if (routeRequestRef.current !== routeRequest) {
-          return;
-        }
-
-        setBusRoutes(routes);
-        setRouteState('idle');
-        if (routes.length === 0) {
-          Alert.alert('No route found', `LTA did not return route data for service ${serviceNo}.`);
-        }
-      })
-      .catch((error) => {
-        if (routeRequestRef.current !== routeRequest) {
-          return;
-        }
-
-        setSelectedRouteServiceNo(null);
-        setRouteState('error');
-        Alert.alert('Could not load route', errorMessage(error));
+  const selectServiceRoute = useCallback(
+    async (serviceNo: string) => {
+      const routeRequestTokenStore = routeRequestTokenStoreRef.current;
+      if (!routeRequestTokenStore) {
+        return;
+      }
+      const refs: RouteRefs = { routeRequestTokenStore };
+      const setters: RouteSetters = {
+        setSelectedRouteServiceNo,
+        setBusRoutes,
+        setRouteState,
+      };
+      const alerter: RouteAlerter = {
+        alert(title, message) {
+          Alert.alert(title, message);
+        },
+      };
+      // Snap the drawer open whenever the user opens a new route
+      // (including the toggle-off branch, where the runner clears
+      // state but the drawer should stay where it is). The snap is
+      // gated to the open branch so closing the route does not
+      // unexpectedly drag the drawer back to its open snap point.
+      if (selectedRouteServiceNo !== serviceNo) {
+        bottomSheetRef.current?.snapToIndex(1);
+      }
+      await runSelectServiceRoute({
+        accountKey,
+        serviceNo,
+        currentlySelectedServiceNo: selectedRouteServiceNo,
+        refs,
+        setters,
+        alerter,
+        onSettingsNeeded: () => setShowSettings(true),
       });
-  };
+    },
+    [accountKey, selectedRouteServiceNo]
+  );
 
   const searchResults = useMemo(() => searchBusStops(busStops, query), [busStops, query]);
   const mapStops = useMemo(
@@ -548,18 +563,7 @@ export function AppContent({
     return [...services].sort((a, b) => compareServiceNumbers(a.ServiceNo, b.ServiceNo));
   }, [arrivals, selectedStop?.BusStopCode]);
   const favoriteItems = useMemo<FavoriteArrivalItem[]>(
-    () =>
-      favorites.map((favorite) => {
-        const response = favoriteArrivals[favorite.busStopCode];
-        const service =
-          response?.Services.find((candidate) => candidate.ServiceNo === favorite.serviceNo) ??
-          createEmptyService(favorite.serviceNo);
-        return {
-          ...favorite,
-          stop: busStops.find((stop) => stop.BusStopCode === favorite.busStopCode),
-          service,
-        };
-      }),
+    () => getFavoriteItems(favorites, favoriteArrivals, busStops),
     [busStops, favoriteArrivals, favorites]
   );
   const selectedRoute = useMemo(

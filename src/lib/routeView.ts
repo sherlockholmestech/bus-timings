@@ -1,7 +1,8 @@
-import { Coordinate, toCoordinate } from './geo';
-import { BusRoute, BusStop } from './lta';
+import { toCoordinate } from './geo';
+import type { Coordinate } from './geo';
+import type { BusRoute, BusStop } from './lta';
 import { compareBusStopCodes } from './sort';
-import { MapBounds } from '../types';
+import type { MapBounds } from '../types';
 
 export type ServiceRouteView = {
   directions: ServiceRouteDirection[];
