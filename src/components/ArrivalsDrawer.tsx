@@ -1,19 +1,14 @@
 import { BottomSheet, BottomSheetScrollView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { RefreshCw, X, Star } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BusServiceArrival, BusStop } from '../lib/lta';
 import { ServiceRouteView } from '../lib/routeView';
 import { compareBusStopCodes, compareServiceNumbers } from '../lib/sort';
 import { AppTheme } from '../theme';
 import { FavoriteService, LoadState } from '../types';
-import {
-  ActivityIndicator,
-  Divider,
-  IconButton,
-  Text,
-} from '../ui';
+import { ActivityIndicator, HorizontalDivider, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 import { ArrivalRow } from './ArrivalRow';
 
@@ -162,7 +157,7 @@ function SelectedStopArrivals({
         lastUpdated={lastUpdated}
         onRefresh={onRefresh}
       />
-      <Divider />
+      <HorizontalDivider color={colors.outlineVariant} thickness={StyleSheet.hairlineWidth} />
       {selectedServices.length === 0 ? (
         <Text
           variant="bodyMedium"
@@ -229,7 +224,7 @@ function FavoriteArrivals({
         lastUpdated={lastUpdated}
         onRefresh={onRefresh}
       />
-      <Divider />
+      <HorizontalDivider color={'#0000'} thickness={0} />
       {favoriteItems.length === 0 ? (
         <EmptyFavorites />
       ) : (
@@ -323,17 +318,27 @@ function RefreshButton({
   const colors = useTheme<AppTheme>().colors;
 
   return (
-    <IconButton
-      icon={() =>
-        isRefreshing ? (
-          <ActivityIndicator color={colors.onSurface} size={18} />
-        ) : (
-          <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
-        )
-      }
-      mode="outlined"
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Refresh arrivals"
       onPress={onPress}
-    />
+      style={({ pressed }) => ({
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 20,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: colors.outlineVariant,
+        backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+      })}
+    >
+      {isRefreshing ? (
+        <ActivityIndicator color={colors.onSurface} size={18} />
+      ) : (
+        <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
+      )}
+    </Pressable>
   );
 }
 
@@ -475,15 +480,26 @@ function RouteView({
                 : `${routeView.stops.length} stops across ${routeView.directions.length} direction${routeView.directions.length === 1 ? '' : 's'}`}
             </Text>
           </View>
-          <IconButton
+          <Pressable
+            accessibilityRole="button"
             accessibilityLabel="Close route view"
-            icon={() => <X color={colors.onSurface} size={21} strokeWidth={2.2} />}
-            mode="outlined"
             onPress={onCloseRoute}
-          />
+            style={({ pressed }) => ({
+              width: 40,
+              height: 40,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 20,
+              borderWidth: StyleSheet.hairlineWidth,
+              borderColor: colors.outlineVariant,
+              backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+            })}
+          >
+            <X color={colors.onSurface} size={21} strokeWidth={2.2} />
+          </Pressable>
         </View>
       </View>
-      <Divider style={{ marginTop: e.spacing.md }} />
+      <HorizontalDivider color={colors.outlineVariant} thickness={StyleSheet.hairlineWidth} />
       {routeState === 'loading' ? (
         <View style={{ alignItems: 'center', padding: e.spacing.xl }}>
           <ActivityIndicator color={colors.primary} size={24} />

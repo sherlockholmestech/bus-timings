@@ -40,38 +40,64 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
         </Text>
       </View>
       <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
+        <HeaderIconButton
           accessibilityLabel="Open favourites"
+          pressedBackground={colors.elevation.level4}
+          defaultBackground={colors.elevation.level3}
+          borderColor={colors.outlineVariant}
+          borderRadius={e.radius.medium}
           onPress={onOpenFavorites}
-          style={({ pressed }) => [
-            styles.iconButton,
-            {
-              backgroundColor: pressed ? colors.elevation.level4 : colors.elevation.level3,
-              borderRadius: e.radius.medium,
-              borderColor: colors.outlineVariant,
-            },
-          ]}
         >
           <Star color={colors.secondary} fill={colors.secondary} size={21} strokeWidth={2.2} />
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
+        </HeaderIconButton>
+        <HeaderIconButton
           accessibilityLabel="Open settings"
+          pressedBackground={colors.elevation.level4}
+          defaultBackground={colors.elevation.level3}
+          borderColor={colors.outlineVariant}
+          borderRadius={e.radius.medium}
           onPress={onOpenSettings}
-          style={({ pressed }) => [
-            styles.iconButton,
-            {
-              backgroundColor: pressed ? colors.elevation.level4 : colors.elevation.level3,
-              borderRadius: e.radius.medium,
-              borderColor: colors.outlineVariant,
-            },
-          ]}
         >
           <Settings color={colors.onSurface} size={21} strokeWidth={2.2} />
-        </Pressable>
+        </HeaderIconButton>
       </View>
     </View>
+  );
+}
+
+function HeaderIconButton({
+  accessibilityLabel,
+  pressedBackground,
+  defaultBackground,
+  borderColor,
+  borderRadius,
+  onPress,
+  children,
+}: {
+  accessibilityLabel: string;
+  pressedBackground: string;
+  defaultBackground: string;
+  borderColor: string;
+  borderRadius: number;
+  onPress: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.iconButton,
+        {
+          backgroundColor: pressed ? pressedBackground : defaultBackground,
+          borderRadius,
+          borderColor,
+        },
+      ]}
+    >
+      {children}
+    </Pressable>
   );
 }
 

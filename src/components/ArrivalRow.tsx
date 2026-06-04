@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BusArrival, BusServiceArrival, minutesUntilArrival } from '../lib/lta';
 import { AppTheme } from '../theme';
-import { IconButton, Text } from '../ui';
+import { Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 
 const CROWD_COLORS: Record<string, string> = {
@@ -110,18 +110,26 @@ export function ArrivalRow({
         )}
       </View>
       {onToggleFavorite ? (
-        <IconButton
+        <Pressable
+          accessibilityRole="button"
           accessibilityLabel={isFavorite ? `Unstar service ${service.ServiceNo}` : `Star service ${service.ServiceNo}`}
-          icon={() => (
-            <Star
-              color={isFavorite ? colors.secondary : colors.onSurfaceVariant}
-              fill={isFavorite ? colors.secondary : 'transparent'}
-              size={21}
-              strokeWidth={2.2}
-            />
-          )}
           onPress={onToggleFavorite}
-        />
+          style={({ pressed }) => ({
+            width: 40,
+            height: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+            borderRadius: 20,
+          })}
+        >
+          <Star
+            color={isFavorite ? colors.secondary : colors.onSurfaceVariant}
+            fill={isFavorite ? colors.secondary : 'transparent'}
+            size={21}
+            strokeWidth={2.2}
+          />
+        </Pressable>
       ) : null}
     </View>
   );

@@ -1,18 +1,18 @@
-import React from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppTheme } from '../theme';
 import { LoadState, ThemeChoice } from '../types';
 import {
   ActivityIndicator,
-  Appbar,
-  Button,
-  Divider,
-  ProgressBar,
-  SegmentedButtons,
-  Surface,
+  HorizontalDivider,
+  LinearProgressIndicator,
+  OutlinedButton,
+  OutlinedTextField,
+  SegmentedButton,
+  SingleChoiceSegmentedButtonRow,
   Text,
-  TextInput,
+  useNativeState,
 } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 
@@ -50,25 +50,42 @@ export function SettingsOverlay({
   const e = theme.expressive;
 
   return (
-    <Surface
-      style={[styles.overlay, { backgroundColor: colors.background, zIndex: 200 }]}
-      elevation={0}
-    >
-      <Appbar.Header
+    <View style={[styles.overlay, { backgroundColor: colors.background, zIndex: 200 }]}>
+      <View
         style={{
-          backgroundColor: colors.background,
           height: topBarHeight,
           paddingTop: topInset + 10,
+          paddingHorizontal: e.spacing.sm,
+          backgroundColor: colors.background,
+          flexDirection: 'row',
+          alignItems: 'center',
         }}
-        statusBarHeight={0}
       >
-        <Appbar.BackAction onPress={onClose} accessibilityLabel="Close settings" />
-        <Appbar.Content title="Settings" titleStyle={{ fontWeight: '800' }} />
-      </Appbar.Header>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Close settings"
+          onPress={onClose}
+          style={({ pressed }) => [
+            styles.iconButton,
+            {
+              backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+              borderRadius: 20,
+            },
+          ]}
+        >
+          <Text style={{ color: colors.onSurface, fontSize: 22, fontWeight: '700' }}>‹</Text>
+        </Pressable>
+        <View style={{ flex: 1, paddingLeft: e.spacing.sm }}>
+          <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: '800' }}>
+            Settings
+          </Text>
+        </View>
+      </View>
       <ScrollView
         contentContainerStyle={{
           padding: e.spacing.lg,
           paddingBottom: e.spacing.xxl,
+          paddingTop: e.spacing.sm,
         }}
         keyboardShouldPersistTaps="handled"
       >
@@ -78,24 +95,20 @@ export function SettingsOverlay({
         >
           LTA DataMall AccountKey
         </Text>
-        <TextInput
-          mode="outlined"
-          label="AccountKey"
-          placeholder="Paste AccountKey"
-          secureTextEntry
-          value={draftKey}
-          onChangeText={onChangeDraftKey}
-          style={{ backgroundColor: colors.surface }}
-        />
-        <Button
-          mode="contained"
-          onPress={onSaveAccountKey}
-          style={{ marginTop: e.spacing.md, borderRadius: e.radius.medium }}
+        <AccountKeyField draftKey={draftKey} onChange={onChangeDraftKey} />
+        <View style={{ height: e.spacing.md }} />
+        <OutlinedButton
+          onClick={onSaveAccountKey}
+          colors={{ containerColor: colors.primary, contentColor: colors.onPrimary }}
         >
-          Save key
-        </Button>
+          <Text style={{ color: colors.onPrimary, fontWeight: '900' }}>Save key</Text>
+        </OutlinedButton>
 
-        <Divider style={{ marginVertical: e.spacing.xl }} />
+        <HorizontalDivider
+          color={colors.outlineVariant}
+          thickness={StyleSheet.hairlineWidth}
+        />
+        <View style={{ height: e.spacing.xl }} />
 
         <Text
           variant="labelLarge"
@@ -114,24 +127,22 @@ export function SettingsOverlay({
           Sync downloads LTA bus stops for search and map markers. Arrival timings and
           route previews load live from LTA.
         </Text>
-        <Button
-          mode="outlined"
-          onPress={onSyncBusStops}
-          disabled={busStopState === 'loading'}
-          style={{ borderRadius: e.radius.medium }}
+        <OutlinedButton
+          onClick={onSyncBusStops}
+          enabled={busStopState !== 'loading'}
+          colors={{ contentColor: colors.primary, containerColor: 'transparent' }}
         >
           {busStopState === 'loading' ? (
             <ActivityIndicator color={colors.primary} size={18} />
           ) : (
-            'Sync bus stops'
+            <Text style={{ color: colors.primary, fontWeight: '800' }}>Sync bus stops</Text>
           )}
-        </Button>
+        </OutlinedButton>
         {busStopState === 'loading' ? (
-          <View>
-            <ProgressBar
+          <View style={{ marginTop: e.spacing.md }}>
+            <LinearProgressIndicator
               progress={syncProgress}
               color={colors.primary}
-              style={{ marginTop: e.spacing.md, borderRadius: e.radius.small, height: 6 }}
             />
             <Text
               variant="bodySmall"
@@ -142,7 +153,11 @@ export function SettingsOverlay({
           </View>
         ) : null}
 
-        <Divider style={{ marginVertical: e.spacing.xl }} />
+        <HorizontalDivider
+          color={colors.outlineVariant}
+          thickness={StyleSheet.hairlineWidth}
+        />
+        <View style={{ height: e.spacing.xl }} />
 
         <Text
           variant="labelLarge"
@@ -150,19 +165,83 @@ export function SettingsOverlay({
         >
           Theme
         </Text>
-        <SegmentedButtons
-          value={themeChoice}
-          onValueChange={(value) => onThemeChange(value as ThemeChoice)}
-          buttons={[
-            { value: 'system', label: 'System' },
-            { value: 'light', label: 'Light' },
-            { value: 'dark', label: 'Dark' },
-          ]}
-        />
+        <SingleChoiceSegmentedButtonRow>
+          <SegmentedButton
+            selected={themeChoice === 'system'}
+            onClick={() => onThemeChange('system')}
+          >
+            <SegmentedButton.Label>
+              <Text style={{ fontWeight: '700' }}>System</Text>
+            </SegmentedButton.Label>
+          </SegmentedButton>
+          <SegmentedButton
+            selected={themeChoice === 'light'}
+            onClick={() => onThemeChange('light')}
+          >
+            <SegmentedButton.Label>
+              <Text style={{ fontWeight: '700' }}>Light</Text>
+            </SegmentedButton.Label>
+          </SegmentedButton>
+          <SegmentedButton
+            selected={themeChoice === 'dark'}
+            onClick={() => onThemeChange('dark')}
+          >
+            <SegmentedButton.Label>
+              <Text style={{ fontWeight: '700' }}>Dark</Text>
+            </SegmentedButton.Label>
+          </SegmentedButton>
+        </SingleChoiceSegmentedButtonRow>
       </ScrollView>
-    </Surface>
+    </View>
   );
 }
+
+function AccountKeyField({
+  draftKey,
+  onChange,
+}: {
+  draftKey: string;
+  onChange: (value: string) => void;
+}) {
+  // Compose `OutlinedTextField` requires its value as an `ObservableState` (a
+  // shared, native-backed state created with `useNativeState`). We mirror the
+  // parent `draftKey` into a local native state so the field is fully native
+  // and bridges changes back through `onChange`.
+  const nativeValue = useNativeState(draftKey);
+
+  // Sync the parent-controlled `draftKey` into the native state so external
+  // changes (e.g. first-launch restore, programmatic clear) are reflected in
+  // the field without remounting the underlying Compose view.
+  useEffect(() => {
+    if (nativeValue.value !== draftKey) {
+      nativeValue.value = draftKey;
+    }
+  }, [draftKey, nativeValue]);
+
+  return (
+    <View>
+      <OutlinedTextField
+        value={nativeValue}
+        onValueChange={(value) => {
+          if (value !== draftKey) {
+            onChange(value);
+          }
+        }}
+        visualTransformation="password"
+        singleLine
+        autoFocus={false}
+        keyboardOptions={{ capitalization: 'none', autoCorrectEnabled: false, keyboardType: 'text' }}
+      >
+        <OutlinedTextField.Label>AccountKey</OutlinedTextField.Label>
+        <OutlinedTextField.Placeholder>Paste AccountKey</OutlinedTextField.Placeholder>
+      </OutlinedTextField>
+    </View>
+  );
+}
+
+// Re-exported to keep the previous public surface stable.
+export { useTheme, useNativeState, Text };
+void Platform;
 
 const styles = StyleSheet.create({
   overlay: {
@@ -171,5 +250,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
+  },
+  iconButton: {
+    alignItems: 'center',
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
   },
 });

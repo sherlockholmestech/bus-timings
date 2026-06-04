@@ -44,6 +44,13 @@ export type ThemeColors = {
 };
 
 export type AppTheme = {
+  /**
+   * Effective color scheme. `'light'` / `'dark'` are forced; `null` follows
+   * the system. Mirrors the `colorScheme` prop accepted by
+   * `@expo/ui/jetpack-compose`'s `Host` so the same value can be passed into
+   * native containers.
+   */
+  scheme: 'light' | 'dark' | null;
   colors: ThemeColors;
   expressive: {
     radius: {
@@ -137,6 +144,7 @@ const darkElevation: ThemeElevation = {
 };
 
 export const lightTheme: AppTheme = {
+  scheme: 'light',
   colors: {
     primary: flexokiLight.blue,
     onPrimary: flexokiLight.bg,
@@ -176,6 +184,7 @@ export const lightTheme: AppTheme = {
 };
 
 export const darkTheme: AppTheme = {
+  scheme: 'dark',
   colors: {
     primary: flexokiDark.blue,
     onPrimary: flexokiDark.bg,
