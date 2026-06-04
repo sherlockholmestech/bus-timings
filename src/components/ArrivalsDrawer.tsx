@@ -1,14 +1,14 @@
 import { BottomSheet, BottomSheetScrollView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { RefreshCw, X, Star } from 'lucide-react-native';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { BusServiceArrival, BusStop } from '../lib/lta';
 import { ServiceRouteView } from '../lib/routeView';
 import { compareBusStopCodes, compareServiceNumbers } from '../lib/sort';
 import { AppTheme } from '../theme';
 import { FavoriteService, LoadState } from '../types';
-import { ActivityIndicator, HorizontalDivider, Text } from '../ui';
+import { ActivityIndicator, HorizontalDivider, IconButton, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 import { ArrivalRow } from './ArrivalRow';
 
@@ -315,30 +315,46 @@ function RefreshButton({
   isRefreshing: boolean;
   onPress: () => void;
 }) {
-  const colors = useTheme<AppTheme>().colors;
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
 
+  // The refresh press surface is a Compose `IconButton` so the action
+  // is a real Jetpack Compose control rather than a React Native
+  // `Pressable`. The outer `View` exists for absolute layout sizing
+  // (Compose controls do not participate in React Native flexbox flow)
+  // and to expose a TalkBack-readable label on the React Native
+  // accessibility boundary — TalkBack traverses the React Native view
+  // tree, not the embedded Compose tree, so the label is attached to
+  // the wrapper even though the press surface is the Compose
+  // `IconButton`. The wrapper's `accessibilityState` reflects the
+  // current loading state so screen-reader users can hear when a
+  // refresh is in flight without depending on the spinner glyph.
   return (
-    <Pressable
+    <View
+      accessible
       accessibilityRole="button"
       accessibilityLabel="Refresh arrivals"
-      onPress={onPress}
-      style={({ pressed }) => ({
-        width: 40,
-        height: 40,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 20,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: colors.outlineVariant,
-        backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
-      })}
+      accessibilityState={isRefreshing ? { busy: true } : undefined}
+      style={[
+        styles.refreshHost,
+        {
+          borderRadius: e.radius.small,
+          borderColor: colors.outlineVariant,
+        },
+      ]}
     >
-      {isRefreshing ? (
-        <ActivityIndicator color={colors.onSurface} size={18} />
-      ) : (
-        <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
-      )}
-    </Pressable>
+      <IconButton
+        onClick={onPress}
+        colors={{ containerColor: 'transparent', contentColor: colors.onSurface }}
+      >
+        {isRefreshing ? (
+          <ActivityIndicator color={colors.onSurface} size={18} />
+        ) : (
+          <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
+        )}
+      </IconButton>
+    </View>
   );
 }
 
@@ -480,23 +496,25 @@ function RouteView({
                 : `${routeView.stops.length} stops across ${routeView.directions.length} direction${routeView.directions.length === 1 ? '' : 's'}`}
             </Text>
           </View>
-          <Pressable
+          <View
+            accessible
             accessibilityRole="button"
             accessibilityLabel="Close route view"
-            onPress={onCloseRoute}
-            style={({ pressed }) => ({
-              width: 40,
-              height: 40,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 20,
-              borderWidth: StyleSheet.hairlineWidth,
-              borderColor: colors.outlineVariant,
-              backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
-            })}
+            style={[
+              styles.closeHost,
+              {
+                borderRadius: e.radius.small,
+                borderColor: colors.outlineVariant,
+              },
+            ]}
           >
-            <X color={colors.onSurface} size={21} strokeWidth={2.2} />
-          </Pressable>
+            <IconButton
+              onClick={onCloseRoute}
+              colors={{ containerColor: 'transparent', contentColor: colors.onSurface }}
+            >
+              <X color={colors.onSurface} size={21} strokeWidth={2.2} />
+            </IconButton>
+          </View>
         </View>
       </View>
       <HorizontalDivider color={colors.outlineVariant} thickness={StyleSheet.hairlineWidth} />
@@ -600,3 +618,26 @@ function groupFavoriteItems(items: FavoriteArrivalItem[]) {
       items: [...group.items].sort((a, b) => compareServiceNumbers(a.serviceNo, b.serviceNo)),
     }));
 }
+
+const styles = StyleSheet.create({
+  // Layout-only React Native wrappers that host a Compose `IconButton`
+  // for the drawer's icon-only actions (refresh and close-route). The
+  // wrappers give the Compose controls a fixed size for absolute
+  // layout, and they expose a React Native accessibility boundary for
+  // TalkBack — the `accessibilityLabel` is read from the wrapper, not
+  // from the embedded Compose view tree.
+  refreshHost: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+  closeHost: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+});

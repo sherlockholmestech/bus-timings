@@ -1,10 +1,21 @@
+// Arrival rows display one bus service at a stop. The favourite star is
+// a Compose `IconButton` (mirroring the icon-only actions in the app
+// header and the location control) so the toggle is a real Jetpack
+// Compose control rather than a React Native `Pressable`. The service
+// number remains a React Native `Pressable` because its visual includes
+// a custom 4 px left border that paints the operator accent and a
+// selected-state overlay that does not map cleanly onto a Compose
+// `Button` or `TextButton`. Behaviour parity (operator colour, selected
+// state, accessibility labels, three-arrival cap, WAB indicator, and
+// invalid-timestamp safety) is preserved on the React Native side.
+
 import { Accessibility, Star } from 'lucide-react-native';
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BusArrival, BusServiceArrival, minutesUntilArrival } from '../lib/lta';
 import { AppTheme } from '../theme';
-import { Text } from '../ui';
+import { IconButton, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 
 const CROWD_COLORS: Record<string, string> = {
@@ -19,6 +30,8 @@ const OPERATOR_ACCENTS: Record<string, string> = {
   TTS: '#879A39',
   GAS: '#DA702C',
 };
+
+const FALLBACK_OPERATOR_ACCENT = '#4385BE';
 
 type ArrivalRowProps = {
   service: BusServiceArrival;
@@ -39,7 +52,7 @@ export function ArrivalRow({
   const colors = theme.colors;
   const e = theme.expressive;
   const activeBuses = [service.NextBus, service.NextBus2, service.NextBus3].filter(hasArrival);
-  const operatorAccent = OPERATOR_ACCENTS[service.Operator] ?? '#4385BE';
+  const operatorAccent = OPERATOR_ACCENTS[service.Operator] ?? FALLBACK_OPERATOR_ACCENT;
 
   return (
     <View
@@ -64,6 +77,7 @@ export function ArrivalRow({
         <Pressable
           accessibilityRole={onSelectServiceRoute ? 'button' : undefined}
           accessibilityLabel={onSelectServiceRoute ? `Show route for service ${service.ServiceNo}` : undefined}
+          accessibilityState={isRouteSelected ? { selected: true } : undefined}
           disabled={!onSelectServiceRoute}
           onPress={onSelectServiceRoute}
           style={{
@@ -110,27 +124,58 @@ export function ArrivalRow({
         )}
       </View>
       {onToggleFavorite ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={isFavorite ? `Unstar service ${service.ServiceNo}` : `Star service ${service.ServiceNo}`}
+        <FavoriteToggle
+          isFavorite={isFavorite}
+          serviceNo={service.ServiceNo}
           onPress={onToggleFavorite}
-          style={({ pressed }) => ({
-            width: 40,
-            height: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
-            borderRadius: 20,
-          })}
-        >
-          <Star
-            color={isFavorite ? colors.secondary : colors.onSurfaceVariant}
-            fill={isFavorite ? colors.secondary : 'transparent'}
-            size={21}
-            strokeWidth={2.2}
-          />
-        </Pressable>
+        />
       ) : null}
+    </View>
+  );
+}
+
+// The favourite star is rendered inside a Compose `IconButton` so the
+// toggle is a native Jetpack Compose action. The outer React Native
+// `View` exists for absolute layout sizing (Compose controls do not
+// participate in React Native flexbox flow) and to expose a TalkBack-
+// readable label on the React Native accessibility boundary — TalkBack
+// traverses the React Native view tree, not the embedded Compose tree,
+// so the label is attached to the wrapper even though the press
+// surface itself is the Compose `IconButton`.
+function FavoriteToggle({
+  isFavorite,
+  serviceNo,
+  onPress,
+}: {
+  isFavorite: boolean;
+  serviceNo: string;
+  onPress: () => void;
+}) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+
+  return (
+    <View
+      accessible
+      accessibilityRole="button"
+      accessibilityLabel={isFavorite ? `Unstar service ${serviceNo}` : `Star service ${serviceNo}`}
+      accessibilityState={isFavorite ? { selected: true } : undefined}
+      style={styles.toggleHost}
+    >
+      <IconButton
+        onClick={onPress}
+        colors={{
+          containerColor: 'transparent',
+          contentColor: isFavorite ? colors.secondary : colors.onSurfaceVariant,
+        }}
+      >
+        <Star
+          color={isFavorite ? colors.secondary : colors.onSurfaceVariant}
+          fill={isFavorite ? colors.secondary : 'transparent'}
+          size={21}
+          strokeWidth={2.2}
+        />
+      </IconButton>
     </View>
   );
 }
@@ -187,3 +232,12 @@ function BusTime({ bus }: { bus: BusArrival }) {
 function hasArrival(bus: BusArrival) {
   return Boolean(bus.EstimatedArrival);
 }
+
+const styles = StyleSheet.create({
+  toggleHost: {
+    alignItems: 'center',
+    height: 40,
+    justifyContent: 'center',
+    width: 40,
+  },
+});

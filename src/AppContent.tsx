@@ -19,6 +19,13 @@ import { SearchOverlay } from './components/SearchOverlay';
 import { SettingsOverlay } from './components/SettingsOverlay';
 import { useBusDataSync } from './hooks/useBusDataSync';
 import { useUserLocation } from './hooks/useUserLocation';
+import {
+  runFavoriteArrivals,
+  runSelectedStopArrivals,
+  type ArrivalAlerter,
+  type ArrivalRefs,
+  type ArrivalSetters
+} from './lib/arrivalRunner';
 import { loadBootstrapState } from './lib/bootstrap';
 import { errorMessage } from './lib/errors';
 import { compareFavorites, createEmptyService } from './lib/favorites';
@@ -27,7 +34,6 @@ import {
   BusArrivalResponse,
   BusRoute,
   BusStop,
-  fetchArrivals,
   fetchBusRoutesForService
 } from './lib/lta';
 import { getServiceRoute, getVisibleStops } from './lib/routeView';
@@ -43,7 +49,6 @@ import {
   FAVORITES_STORAGE,
   THEME_STORAGE
 } from './lib/storage';
-import { formatClockTime } from './lib/time';
 import { useTheme } from './ui/ThemeContext';
 import { AppTheme } from './theme';
 import { FavoriteService, LoadState, MapBounds, ThemeChoice } from './types';
@@ -86,7 +91,16 @@ export function AppContent({
   const [query, setQuery] = useState('');
   const [locationFocusRequest, setLocationFocusRequest] = useState(0);
   const [mapBounds, setMapBounds] = useState<MapBounds | null>(null);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  // Last-updated timestamps are tracked per active drawer mode so the
+  // drawer header never shows a timestamp produced by the inactive
+  // mode (e.g. a selected-stop refresh timestamp shown while the user
+  // has since cleared the selected stop and is now in favourites mode).
+  // Both timestamps default to `null` and are only advanced on
+  // successful active-context refreshes — failed refreshes never
+  // advance either timestamp. The `activeLastUpdated` derived value is
+  // the one passed into the drawer header.
+  const [selectedStopLastUpdated, setSelectedStopLastUpdated] = useState<string | null>(null);
+  const [favoritesLastUpdated, setFavoritesLastUpdated] = useState<string | null>(null);
 
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomSheetRef = useRef<BottomSheetMethods | null>(null);
@@ -102,6 +116,15 @@ export function AppContent({
   // so the same counter instance is reused across renders.
   const arrivalTokenStoreRef = useRef<RequestTokenStore | null>(null);
   const favoriteArrivalTokenStoreRef = useRef<RequestTokenStore | null>(null);
+  // Re-entry guards for the two live-data modes. They serialise manual
+  // refresh taps and 20-second timer ticks so a single mode never
+  // launches overlapping fetches — even if the refresh button is
+  // double-tapped or a timer tick fires while a previous request is
+  // still in flight. The guards are per-mode so a favourites refresh
+  // can start while a selected-stop refresh is in flight (and vice
+  // versa) as long as each mode's own request has settled.
+  const arrivalInFlightRef = useRef(false);
+  const favoriteArrivalInFlightRef = useRef(false);
   if (arrivalTokenStoreRef.current === null) {
     arrivalTokenStoreRef.current = createRequestToken();
   }
@@ -281,71 +304,73 @@ export function AppContent({
   };
 
   const loadArrivals = useCallback(async () => {
-    if (!accountKey.trim() || !selectedStop) {
+    if (!selectedStop) {
       return;
     }
-
     const tokenStore = arrivalTokenStoreRef.current;
     if (!tokenStore) {
       return;
     }
-    const token = tokenStore.capture();
-    const stopCode = selectedStop.BusStopCode;
-    setArrivalState('loading');
-    try {
-      const response = await fetchArrivals(accountKey.trim(), stopCode);
-      if (!tokenStore.isCurrent(token) || response.BusStopCode !== stopCode) {
-        return;
-      }
-      setArrivals(response);
-      setLastUpdated(formatClockTime());
-      setArrivalState('idle');
-    } catch (error) {
-      if (!tokenStore.isCurrent(token)) {
-        return;
-      }
-      setArrivalState('error');
-      Alert.alert('Could not load arrivals', errorMessage(error));
-    }
+    const refs: ArrivalRefs = {
+      arrivalInFlight: arrivalInFlightRef,
+      favoriteArrivalInFlight: favoriteArrivalInFlightRef,
+      arrivalTokenStore: tokenStore,
+      favoriteArrivalTokenStore: favoriteArrivalTokenStoreRef.current ?? tokenStore,
+    };
+    const setters: ArrivalSetters = {
+      setArrivalState,
+      setArrivals,
+      setSelectedStopLastUpdated,
+      setFavoriteArrivalState,
+      setFavoriteArrivals,
+      setFavoritesLastUpdated,
+    };
+    const alerter: ArrivalAlerter = {
+      alert(title, message) {
+        Alert.alert(title, message);
+      },
+    };
+    await runSelectedStopArrivals({
+      accountKey,
+      selectedStopCode: selectedStop.BusStopCode,
+      refs,
+      setters,
+      alerter,
+    });
   }, [accountKey, selectedStop]);
 
   const loadFavoriteArrivals = useCallback(async () => {
-    const favoriteStopCodes = [...new Set(favorites.map((favorite) => favorite.busStopCode))];
-    if (!accountKey.trim() || favoriteStopCodes.length === 0) {
-      return;
-    }
-
     const tokenStore = favoriteArrivalTokenStoreRef.current;
     if (!tokenStore) {
       return;
     }
-    const token = tokenStore.capture();
-    const accountKeyAtRequest = accountKey.trim();
-    setFavoriteArrivalState('loading');
-    try {
-      const responses = await Promise.all(
-        favoriteStopCodes.map((busStopCode) =>
-          fetchArrivals(accountKeyAtRequest, busStopCode)
-        )
-      );
-      if (!tokenStore.isCurrent(token)) {
-        return;
-      }
-      setFavoriteArrivals(
-        responses.reduce<Record<string, BusArrivalResponse>>((byStopCode, response) => {
-          byStopCode[response.BusStopCode] = response;
-          return byStopCode;
-        }, {})
-      );
-      setLastUpdated(formatClockTime());
-      setFavoriteArrivalState('idle');
-    } catch (error) {
-      if (!tokenStore.isCurrent(token)) {
-        return;
-      }
-      setFavoriteArrivalState('error');
-      Alert.alert('Could not load favourite arrivals', errorMessage(error));
-    }
+    const favoriteStopCodes = [...new Set(favorites.map((favorite) => favorite.busStopCode))];
+    const refs: ArrivalRefs = {
+      arrivalInFlight: arrivalInFlightRef,
+      favoriteArrivalInFlight: favoriteArrivalInFlightRef,
+      arrivalTokenStore: arrivalTokenStoreRef.current ?? tokenStore,
+      favoriteArrivalTokenStore: tokenStore,
+    };
+    const setters: ArrivalSetters = {
+      setArrivalState,
+      setArrivals,
+      setSelectedStopLastUpdated,
+      setFavoriteArrivalState,
+      setFavoriteArrivals,
+      setFavoritesLastUpdated,
+    };
+    const alerter: ArrivalAlerter = {
+      alert(title, message) {
+        Alert.alert(title, message);
+      },
+    };
+    await runFavoriteArrivals({
+      accountKey,
+      favoriteStopCodes,
+      refs,
+      setters,
+      alerter,
+    });
   }, [accountKey, favorites]);
 
   useEffect(() => {
@@ -355,13 +380,21 @@ export function AppContent({
 
     // Invalidate any in-flight arrival/favourite request from a previous
     // AccountKey, selected stop, or favourites set so a late response
-    // cannot update `lastUpdated`, `arrivalState`, `arrivals`,
-    // `favoriteArrivals`, or the user-visible alert after the new
-    // AccountKey has been applied. The next `loadArrivals` /
-    // `loadFavoriteArrivals` call (if the new AccountKey is non-empty)
-    // captures a fresh token.
+    // cannot update `selectedStopLastUpdated`, `favoritesLastUpdated`,
+    // `arrivalState`, `arrivals`, `favoriteArrivals`, or the
+    // user-visible alert after the new AccountKey has been applied.
+    // The next `loadArrivals` / `loadFavoriteArrivals` call (if the new
+    // AccountKey is non-empty) captures a fresh token.
     arrivalTokenStoreRef.current?.invalidate();
     favoriteArrivalTokenStoreRef.current?.invalidate();
+    // Reset the per-mode in-flight guards when the live-data context
+    // changes. The previous in-flight request will still settle, but
+    // its `finally` block will trip the token check and bail out
+    // without mutating state. Resetting the guard here ensures the
+    // fresh effect run can launch its own request immediately rather
+    // than waiting up to 20 seconds for the next interval tick.
+    arrivalInFlightRef.current = false;
+    favoriteArrivalInFlightRef.current = false;
 
     if (!accountKey.trim()) {
       return;
@@ -535,6 +568,20 @@ export function AppContent({
   );
   const visibleMapStops = selectedRouteServiceNo ? selectedRoute.stops : mapStops;
 
+  // The drawer header timestamp is mode-scoped: selected-stop mode
+  // shows the timestamp from the last successful selected-stop
+  // refresh, favourites mode shows the timestamp from the last
+  // successful favourites refresh, and the route view falls back to
+  // the most recent of either so the route header still displays a
+  // meaningful "Updated …" caption. Each timestamp only advances on a
+  // successful active-context refresh — failed refreshes never
+  // advance the displayed value.
+  const activeLastUpdated = selectedRouteServiceNo
+    ? selectedStopLastUpdated ?? favoritesLastUpdated
+    : selectedStop
+    ? selectedStopLastUpdated
+    : favoritesLastUpdated;
+
   const mapCenter = selectedStop ? toCoordinate(selectedStop) : userLocation ?? singaporeCenter;
   // The Leaflet map inset is driven by the arrivals drawer position so
   // the visible map area clears the drawer. The overlay bottom padding
@@ -587,7 +634,7 @@ export function AppContent({
         favoriteArrivalState={favoriteArrivalState}
         favoriteItems={favoriteItems}
         favorites={favorites}
-        lastUpdated={lastUpdated}
+        lastUpdated={activeLastUpdated}
         routeState={routeState}
         routeView={selectedRoute}
         selectedServices={selectedServices}
