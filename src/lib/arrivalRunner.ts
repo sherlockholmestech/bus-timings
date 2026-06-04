@@ -19,7 +19,7 @@
 import { errorMessage } from './errors';
 import { fetchArrivals, type BusArrivalResponse } from './lta';
 import type { RequestTokenStore } from './requestToken';
-import { formatClockTime } from './time';
+import { formatTimestamp, type Timestamp } from './time';
 import type { LoadState } from '../types';
 
 export type ArrivalAlerter = {
@@ -29,10 +29,10 @@ export type ArrivalAlerter = {
 export type ArrivalSetters = {
   setArrivalState: (state: LoadState) => void;
   setArrivals: (response: BusArrivalResponse) => void;
-  setSelectedStopLastUpdated: (timestamp: string) => void;
+  setSelectedStopLastUpdated: (timestamp: Timestamp) => void;
   setFavoriteArrivalState: (state: LoadState) => void;
   setFavoriteArrivals: (byStopCode: Record<string, BusArrivalResponse>) => void;
-  setFavoritesLastUpdated: (timestamp: string) => void;
+  setFavoritesLastUpdated: (timestamp: Timestamp) => void;
 };
 
 export type ArrivalRefs = {
@@ -104,7 +104,7 @@ export async function runSelectedStopArrivals(options: RunSelectedStopArrivalsOp
       return;
     }
     setters.setArrivals(response);
-    setters.setSelectedStopLastUpdated(formatClockTime());
+    setters.setSelectedStopLastUpdated(formatTimestamp());
     setters.setArrivalState('idle');
   } catch (error) {
     if (!refs.arrivalTokenStore.isCurrent(token)) {
@@ -167,7 +167,7 @@ export async function runFavoriteArrivals(options: RunFavoriteArrivalsOptions): 
       return;
     }
     setters.setFavoriteArrivals(byStopCode);
-    setters.setFavoritesLastUpdated(formatClockTime());
+    setters.setFavoritesLastUpdated(formatTimestamp());
     setters.setFavoriteArrivalState('idle');
   } catch (error) {
     if (!refs.favoriteArrivalTokenStore.isCurrent(token)) {

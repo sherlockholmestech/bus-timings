@@ -24,6 +24,7 @@ type ArrivalsDrawerProps = {
   favoriteArrivalState: LoadState;
   favoriteItems: FavoriteArrivalItem[];
   favorites: FavoriteService[];
+  hasFavoriteArrivals: boolean;
   lastUpdated: string | null;
   routeState: LoadState;
   routeView: ServiceRouteView;
@@ -46,6 +47,7 @@ export function ArrivalsDrawer({
   favoriteArrivalState,
   favoriteItems,
   favorites,
+  hasFavoriteArrivals,
   lastUpdated,
   routeState,
   routeView,
@@ -93,6 +95,7 @@ export function ArrivalsDrawer({
       favoriteArrivalState={favoriteArrivalState}
       favoriteGroups={favoriteGroups}
       favoriteItems={favoriteItems}
+      hasFavoriteArrivals={hasFavoriteArrivals}
       lastUpdated={lastUpdated}
       selectedRouteServiceNo={selectedRouteServiceNo}
       onRefresh={onRefresh}
@@ -157,16 +160,27 @@ function SelectedStopArrivals({
       />
       <HorizontalDivider color={colors.outlineVariant} thickness={StyleSheet.hairlineWidth} />
       {selectedServices.length === 0 ? (
-        <Text
-          variant="bodyMedium"
-          style={{
-            color: colors.onSurfaceVariant,
-            textAlign: 'center',
-            marginTop: e.spacing.xl,
-          }}
-        >
-          No arrivals returned for this stop right now.
-        </Text>
+        // First-load: arrivalState is loading and no successful
+        // response has populated `selectedServices` yet. Render a
+        // pending indicator instead of the "No arrivals returned"
+        // message so the user can distinguish a first load from a
+        // completed empty result. Once the first successful refresh
+        // lands, `selectedServices` will be populated and the row
+        // list will render normally.
+        arrivalState === 'loading' ? (
+          <PendingArrivals label="Loading arrivals..." />
+        ) : (
+          <Text
+            variant="bodyMedium"
+            style={{
+              color: colors.onSurfaceVariant,
+              textAlign: 'center',
+              marginTop: e.spacing.xl,
+            }}
+          >
+            No arrivals returned for this stop right now.
+          </Text>
+        )
       ) : (
         selectedServices.map((service) => (
           <ArrivalRow
@@ -192,10 +206,43 @@ function SelectedStopArrivals({
   );
 }
 
+function PendingArrivals({ label }: { label: string }) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
+
+  return (
+    <View
+      accessible
+      accessibilityRole="progressbar"
+      accessibilityLabel={label}
+      style={{
+        alignItems: 'center',
+        paddingHorizontal: e.spacing.lg,
+        paddingTop: e.spacing.xl,
+        paddingBottom: e.spacing.xl,
+      }}
+    >
+      <ActivityIndicator color={colors.primary} size={24} />
+      <Text
+        variant="bodyMedium"
+        style={{
+          color: colors.onSurfaceVariant,
+          marginTop: e.spacing.md,
+          textAlign: 'center',
+        }}
+      >
+        {label}
+      </Text>
+    </View>
+  );
+}
+
 function FavoriteArrivals({
   favoriteArrivalState,
   favoriteGroups,
   favoriteItems,
+  hasFavoriteArrivals,
   lastUpdated,
   selectedRouteServiceNo,
   onRefresh,
@@ -206,6 +253,7 @@ function FavoriteArrivals({
   favoriteArrivalState: LoadState;
   favoriteGroups: FavoriteArrivalGroup[];
   favoriteItems: FavoriteArrivalItem[];
+  hasFavoriteArrivals: boolean;
   lastUpdated: string | null;
   selectedRouteServiceNo: string | null;
   onRefresh: () => void;
@@ -213,6 +261,19 @@ function FavoriteArrivals({
   onSelectServiceRoute: (serviceNo: string) => void;
   onToggleFavorite: (favorite: FavoriteService) => void;
 }) {
+  // First-load detection: the user has at least one favourite, the
+  // favourites request is in flight, and no successful response has
+  // populated the live arrival map yet. In that branch the
+  // favourite rows would otherwise render with empty service data
+  // ("No active arrival") which looks identical to a completed
+  // empty state. Show a pending indicator instead so the user can
+  // tell the request is in flight. Once a response arrives, the
+  // existing rows render normally and a subsequent refresh keeps
+  // the existing rows visible (the header still shows the
+  // spinner) until the new response lands.
+  const isFirstLoadLoading =
+    favoriteItems.length > 0 && !hasFavoriteArrivals && favoriteArrivalState === 'loading';
+
   return (
     <>
       <DrawerHeader
@@ -225,6 +286,8 @@ function FavoriteArrivals({
       <HorizontalDivider color={'#0000'} thickness={0} />
       {favoriteItems.length === 0 ? (
         <EmptyFavorites />
+      ) : isFirstLoadLoading ? (
+        <PendingArrivals label="Loading favourite arrivals..." />
       ) : (
         favoriteGroups.map((group) => (
           <FavoriteStopGroup

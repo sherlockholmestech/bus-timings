@@ -10,6 +10,7 @@ import { runFavoriteArrivals, runSelectedStopArrivals, type ArrivalAlerter, type
 import { createRequestToken } from '../lib/requestToken';
 import type { BusArrivalResponse, BusServiceArrival } from '../lib/lta';
 import type { LoadState } from '../types';
+import type { Timestamp } from '../lib/time';
 
 function emptyServices(): BusServiceArrival[] {
   return [];
@@ -35,10 +36,10 @@ type Setter = 'setArrivalState' | 'setArrivals' | 'setSelectedStopLastUpdated' |
 type RecordingSetters = ArrivalSetters & {
   setArrivalStateCalls: LoadState[];
   arrivals: BusArrivalResponse[];
-  selectedStopLastUpdatedCalls: string[];
+  selectedStopLastUpdatedCalls: Timestamp[];
   setFavoriteArrivalStateCalls: LoadState[];
   favoriteArrivals: Record<string, BusArrivalResponse>[];
-  favoritesLastUpdatedCalls: string[];
+  favoritesLastUpdatedCalls: Timestamp[];
 };
 
 type RecordingAlerter = ArrivalAlerter & {
@@ -55,10 +56,10 @@ type TestHarness = {
   favoriteArrivalTokenStore: ReturnType<typeof createRequestToken>;
   setArrivalStateCalls: LoadState[];
   arrivals: BusArrivalResponse[];
-  selectedStopLastUpdatedCalls: string[];
+  selectedStopLastUpdatedCalls: Timestamp[];
   setFavoriteArrivalStateCalls: LoadState[];
   favoriteArrivals: Record<string, BusArrivalResponse>[];
-  favoritesLastUpdatedCalls: string[];
+  favoritesLastUpdatedCalls: Timestamp[];
   alertCalls: Array<{ title: string; message: string }>;
 };
 
@@ -69,10 +70,10 @@ function makeHarness(): TestHarness {
   const favoriteArrivalInFlightRef = { current: false };
   const setArrivalStateCalls: LoadState[] = [];
   const arrivals: BusArrivalResponse[] = [];
-  const selectedStopLastUpdatedCalls: string[] = [];
+  const selectedStopLastUpdatedCalls: Timestamp[] = [];
   const setFavoriteArrivalStateCalls: LoadState[] = [];
   const favoriteArrivals: Record<string, BusArrivalResponse>[] = [];
-  const favoritesLastUpdatedCalls: string[] = [];
+  const favoritesLastUpdatedCalls: Timestamp[] = [];
   const alertCalls: Array<{ title: string; message: string }> = [];
   const setters: ArrivalSetters = {
     setArrivalState(state) {
@@ -200,6 +201,17 @@ test('runSelectedStopArrivals stores the response, advances the timestamp, and r
   assert.equal(harness.arrivals.length, 1);
   assert.equal(harness.arrivals[0]?.BusStopCode, '01012');
   assert.equal(harness.selectedStopLastUpdatedCalls.length, 1, 'timestamp advances on success');
+  // The timestamp setter receives a comparable `Timestamp` whose
+  // `at` is a finite number and whose `display` is a non-empty
+  // string. The drawer header compares timestamps across the
+  // selected-stop and favourites refresh modes, so the metadata
+  // must be a `Timestamp` rather than a raw display string.
+  const selectedTimestamp = harness.selectedStopLastUpdatedCalls[0];
+  assert.ok(selectedTimestamp, 'selected-stop timestamp must be recorded');
+  assert.equal(typeof selectedTimestamp?.at, 'number');
+  assert.ok(Number.isFinite(selectedTimestamp?.at ?? Number.NaN));
+  assert.equal(typeof selectedTimestamp?.display, 'string');
+  assert.ok((selectedTimestamp?.display ?? '').length > 0);
   assert.deepEqual(harness.setArrivalStateCalls, ['loading', 'idle']);
   assert.equal(harness.alertCalls.length, 0);
   assert.deepEqual(harness.arrivalInFlightRef.current, false, 'in-flight guard is released after success');
@@ -354,6 +366,15 @@ test('runFavoriteArrivals stores one response per unique stop code and advances 
   assert.equal(recorded?.['01012']?.BusStopCode, '01012');
   assert.equal(recorded?.['02001']?.BusStopCode, '02001');
   assert.equal(harness.favoritesLastUpdatedCalls.length, 1, 'favourites timestamp advances on success');
+  // The favourites timestamp setter also receives a comparable
+  // `Timestamp`. The route-mode header uses the `at` value of both
+  // timestamps to pick the newest successful refresh.
+  const favoritesTimestamp = harness.favoritesLastUpdatedCalls[0];
+  assert.ok(favoritesTimestamp, 'favourites timestamp must be recorded');
+  assert.equal(typeof favoritesTimestamp?.at, 'number');
+  assert.ok(Number.isFinite(favoritesTimestamp?.at ?? Number.NaN));
+  assert.equal(typeof favoritesTimestamp?.display, 'string');
+  assert.ok((favoritesTimestamp?.display ?? '').length > 0);
   assert.deepEqual(harness.setFavoriteArrivalStateCalls, ['loading', 'idle']);
   assert.equal(harness.selectedStopLastUpdatedCalls.length, 0, 'favourites refresh must not advance the selected-stop timestamp');
 });

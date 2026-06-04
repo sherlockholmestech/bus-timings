@@ -56,6 +56,7 @@ import {
 import { useTheme } from './ui/ThemeContext';
 import { AppTheme } from './theme';
 import { FavoriteService, LoadState, MapBounds, ThemeChoice } from './types';
+import { pickNewestTimestamp, type Timestamp } from './lib/time';
 
 const ARRIVAL_REFRESH_MS = 20000;
 const APP_BAR_CONTENT_HEIGHT = 76;
@@ -101,10 +102,13 @@ export function AppContent({
   // has since cleared the selected stop and is now in favourites mode).
   // Both timestamps default to `null` and are only advanced on
   // successful active-context refreshes — failed refreshes never
-  // advance either timestamp. The `activeLastUpdated` derived value is
-  // the one passed into the drawer header.
-  const [selectedStopLastUpdated, setSelectedStopLastUpdated] = useState<string | null>(null);
-  const [favoritesLastUpdated, setFavoritesLastUpdated] = useState<string | null>(null);
+  // advance either timestamp. Each `Timestamp` carries a comparable
+  // `at` (epoch milliseconds) alongside a `display` string, so the
+  // route-mode header can pick the newest successful refresh across
+  // both modes via `pickNewestTimestamp`. The `activeLastUpdated`
+  // derived value is the one passed into the drawer header.
+  const [selectedStopLastUpdated, setSelectedStopLastUpdated] = useState<Timestamp | null>(null);
+  const [favoritesLastUpdated, setFavoritesLastUpdated] = useState<Timestamp | null>(null);
 
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const bottomSheetRef = useRef<BottomSheetMethods | null>(null);
@@ -591,16 +595,20 @@ export function AppContent({
   // The drawer header timestamp is mode-scoped: selected-stop mode
   // shows the timestamp from the last successful selected-stop
   // refresh, favourites mode shows the timestamp from the last
-  // successful favourites refresh, and the route view falls back to
-  // the most recent of either so the route header still displays a
-  // meaningful "Updated …" caption. Each timestamp only advances on a
-  // successful active-context refresh — failed refreshes never
-  // advance the displayed value.
-  const activeLastUpdated = selectedRouteServiceNo
-    ? selectedStopLastUpdated ?? favoritesLastUpdated
-    : selectedStop
-    ? selectedStopLastUpdated
-    : favoritesLastUpdated;
+  // successful favourites refresh, and the route view shows the
+  // *newest* successful refresh across both modes so the route
+  // header still displays a meaningful "Updated …" caption. Each
+  // timestamp only advances on a successful active-context refresh
+  // — failed refreshes never advance either timestamp.
+  const activeLastUpdated = (() => {
+    if (selectedRouteServiceNo) {
+      return pickNewestTimestamp(selectedStopLastUpdated, favoritesLastUpdated)?.display ?? null;
+    }
+    if (selectedStop) {
+      return selectedStopLastUpdated?.display ?? null;
+    }
+    return favoritesLastUpdated?.display ?? null;
+  })();
 
   const mapCenter = selectedStop ? toCoordinate(selectedStop) : userLocation ?? singaporeCenter;
   // The Leaflet map inset is driven by the arrivals drawer position so
@@ -654,6 +662,7 @@ export function AppContent({
         favoriteArrivalState={favoriteArrivalState}
         favoriteItems={favoriteItems}
         favorites={favorites}
+        hasFavoriteArrivals={Object.keys(favoriteArrivals).length > 0}
         lastUpdated={activeLastUpdated}
         routeState={routeState}
         routeView={selectedRoute}
@@ -670,6 +679,15 @@ export function AppContent({
           void toggleFavorite(favorite);
         }}
         onRefresh={() => {
+          // Manual refresh without a trimmed AccountKey must open
+          // settings (or surface a key-required state) rather than
+          // call LTA. The runners silently bail on an empty key, so
+          // the user-facing openSettings side effect must be wired
+          // here in the shell to satisfy the no-key contract.
+          if (!accountKey.trim()) {
+            setShowSettings(true);
+            return;
+          }
           if (selectedStop) {
             void loadArrivals();
           } else {
