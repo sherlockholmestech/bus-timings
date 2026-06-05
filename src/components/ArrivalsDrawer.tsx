@@ -11,7 +11,7 @@ import { BusServiceArrival, BusStop } from '../lib/lta';
 import { ServiceRouteView } from '../lib/routeView';
 import { AppTheme } from '../theme';
 import { FavoriteService, LoadState } from '../types';
-import { ActivityIndicator, HorizontalDivider, Text } from '../ui';
+import { ActivityIndicator, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 import { ArrivalRow } from './ArrivalRow';
 import { InlineDrawer, type InlineDrawerMethods } from './InlineDrawer';
@@ -204,7 +204,7 @@ function SelectedStopArrivals({
         lastUpdated={lastUpdated}
         onRefresh={onRefresh}
       />
-      <HorizontalDivider color={colors.outlineVariant} thickness={StyleSheet.hairlineWidth} />
+      <View style={{ backgroundColor: colors.outlineVariant, height: StyleSheet.hairlineWidth }} />
       {selectedServices.length === 0 ? (
         // First-load: arrivalState is loading and no successful
         // response has populated `selectedServices` yet. Render a
@@ -329,7 +329,7 @@ function FavoriteArrivals({
         lastUpdated={lastUpdated}
         onRefresh={onRefresh}
       />
-      <HorizontalDivider color={'#0000'} thickness={0} />
+      <View style={{ backgroundColor: '#0000', height: 0 }} />
       {favoriteItems.length === 0 ? (
         <EmptyFavorites />
       ) : isFirstLoadLoading ? (
@@ -448,17 +448,18 @@ function RefreshButton({
       style={({ pressed }) => [
         styles.refreshHost,
         {
-          borderRadius: e.radius.small,
-          borderColor: colors.outlineVariant,
-          backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+          borderRadius: e.radius.extraLarge,
+          borderColor: 'transparent',
+          backgroundColor: pressed ? colors.elevation.level3 : colors.primaryContainer,
+          transform: [{ scale: pressed ? 0.96 : 1 }],
         },
       ]}
     >
       <View pointerEvents="none" style={styles.refreshInner}>
         {isRefreshing ? (
-          <ActivityIndicator color={colors.onSurface} size={18} />
+          <ActivityIndicator color={colors.primary} size={18} />
         ) : (
-          <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
+          <RefreshCw color={colors.primary} size={20} strokeWidth={2.3} />
         )}
       </View>
     </Pressable>
@@ -635,7 +636,7 @@ function RouteView({
           </Pressable>
         </View>
       </View>
-      <HorizontalDivider color={colors.outlineVariant} thickness={StyleSheet.hairlineWidth} />
+      <View style={{ backgroundColor: colors.outlineVariant, height: StyleSheet.hairlineWidth }} />
       {routeState === 'loading' ? (
         <View style={{ alignItems: 'center', padding: e.spacing.xl }}>
           <ActivityIndicator color={colors.primary} size={24} />
@@ -726,11 +727,11 @@ const styles = StyleSheet.create({
   // re-route touches away from the outer `Pressable`.
   refreshHost: {
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 40,
+    borderWidth: 0,
+    height: 44,
     justifyContent: 'center',
     overflow: 'hidden',
-    width: 40,
+    width: 44,
   },
   refreshInner: {
     alignItems: 'center',

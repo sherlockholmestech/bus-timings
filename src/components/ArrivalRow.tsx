@@ -169,7 +169,8 @@ function FavoriteToggle({
 }) {
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
-  const starColor = isFavorite ? colors.secondary : colors.onSurfaceVariant;
+  const e = theme.expressive;
+  const starColor = isFavorite ? colors.onSecondaryContainer : colors.onSurfaceVariant;
 
   return (
     <Pressable
@@ -181,7 +182,14 @@ function FavoriteToggle({
       style={({ pressed }) => [
         styles.toggleHost,
         {
-          backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+          backgroundColor: isFavorite
+            ? colors.secondaryContainer
+            : pressed
+              ? colors.elevation.level2
+              : 'transparent',
+          borderColor: isFavorite ? 'transparent' : colors.outlineVariant,
+          borderRadius: e.radius.large,
+          transform: [{ scale: pressed ? 0.94 : 1 }],
         },
       ]}
     >
@@ -189,8 +197,8 @@ function FavoriteToggle({
         <Star
           color={starColor}
           fill={isFavorite ? starColor : 'transparent'}
-          size={21}
-          strokeWidth={2.2}
+          size={22}
+          strokeWidth={2.3}
         />
       </View>
     </Pressable>
@@ -249,11 +257,11 @@ function BusTime({ bus }: { bus: BusArrival }) {
 const styles = StyleSheet.create({
   toggleHost: {
     alignItems: 'center',
-    borderRadius: 8,
-    height: 40,
+    borderWidth: StyleSheet.hairlineWidth,
+    height: 44,
     justifyContent: 'center',
     overflow: 'hidden',
-    width: 40,
+    width: 44,
   },
   toggleInner: {
     alignItems: 'center',

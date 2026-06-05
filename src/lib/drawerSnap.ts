@@ -74,6 +74,8 @@ export function resolveSnapIndex(
   velocityY: number,
   options: ResolveSnapIndexOptions = {}
 ): number {
+  'worklet';
+
   if (snapPoints.length === 0) {
     return -1;
   }

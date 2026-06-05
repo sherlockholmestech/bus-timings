@@ -58,23 +58,28 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
       <View style={styles.actions}>
         <HeaderIconButton
           accessibilityLabel="Open favourites"
-          containerColor={colors.elevation.level3}
-          pressedContainerColor={colors.elevation.level2}
-          borderColor={colors.outlineVariant}
-          borderRadius={e.radius.medium}
+          containerColor={colors.secondaryContainer}
+          pressedContainerColor={colors.elevation.level3}
+          borderColor="transparent"
+          borderRadius={e.radius.extraLarge}
           onPress={onOpenFavorites}
         >
-          <Star color={colors.secondary} fill={colors.secondary} size={21} strokeWidth={2.2} />
+          <Star
+            color={colors.onSecondaryContainer}
+            fill={colors.onSecondaryContainer}
+            size={21}
+            strokeWidth={2.3}
+          />
         </HeaderIconButton>
         <HeaderIconButton
           accessibilityLabel="Open settings"
-          containerColor={colors.elevation.level3}
-          pressedContainerColor={colors.elevation.level2}
-          borderColor={colors.outlineVariant}
-          borderRadius={e.radius.medium}
+          containerColor={colors.surfaceVariant}
+          pressedContainerColor={colors.elevation.level3}
+          borderColor="transparent"
+          borderRadius={e.radius.extraLarge}
           onPress={onOpenSettings}
         >
-          <Settings color={colors.onSurface} size={21} strokeWidth={2.2} />
+          <Settings color={colors.onSurfaceVariant} size={21} strokeWidth={2.3} />
         </HeaderIconButton>
       </View>
     </View>
@@ -140,6 +145,7 @@ function HeaderIconButton({
           backgroundColor: pressed
             ? (pressedContainerColor ?? containerColor)
             : containerColor,
+          transform: [{ scale: pressed ? 0.96 : 1 }],
         },
       ]}
     >
@@ -180,11 +186,11 @@ const styles = StyleSheet.create({
   },
   iconButtonHost: {
     alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 44,
+    borderWidth: 0,
+    height: 48,
     justifyContent: 'center',
     overflow: 'hidden',
-    width: 44,
+    width: 48,
   },
   iconButtonInner: {
     alignItems: 'center',

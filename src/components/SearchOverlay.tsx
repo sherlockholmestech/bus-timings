@@ -1,33 +1,11 @@
-// Compose icon slots must use Android-safe icon sources, not React
-// Native `Text` or SVG/lucide children. The previous implementation
-// rendered a Unicode "⌕" character inside a React Native `Text` shim
-// inside the `OutlinedTextField.LeadingIcon` slot; that combination
-// was a non-Compose child inside a Compose slot, which is the exact
-// pattern that the `runtime-android-icons-visible` regression fix
-// guards against. The fix is to use the @expo/ui Compose `Icon`
-// component with a local XML vector drawable asset, which is the
-// only @expo/ui-supported icon source for Compose icon slots and
-// renders natively on Android without depending on the system font
-// catalog. The `tint` prop recolors the asset at runtime so the
-// glyph is legible in both light and dark themes. The close
-// button remains a React Native `Pressable` with a lucide `X`
-// glyph (the "React Native control that renders a lucide icon
-// directly" path), so it is also Android-safe.
-
-import { X } from 'lucide-react-native';
-import React, { useEffect } from 'react';
-import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Search, X } from 'lucide-react-native';
+import React from 'react';
+import { Keyboard, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { BusStop } from '../lib/lta';
 import { formatSearchResultSubtitle } from '../lib/search';
 import { AppTheme } from '../theme';
-import {
-  Icon,
-  OutlinedButton,
-  OutlinedTextField,
-  Text,
-  useNativeState,
-} from '../ui';
+import { Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 
 type SearchOverlayProps = {
@@ -90,24 +68,6 @@ export function SearchOverlay({
     onClose();
   };
 
-  // Compose `DockedSearchBar` does not expose an `autoFocus` prop, so we
-  // mirror the parent-controlled `query` into a Compose `OutlinedTextField`
-  // (which does support `autoFocus`) and bridge edits through
-  // `onChangeQuery`. This is the equivalent reliable focus path that
-  // preserves the existing query/change contract.
-  const nativeQuery = useNativeState(query);
-  useEffect(() => {
-    if (nativeQuery.value !== query) {
-      nativeQuery.value = query;
-    }
-  }, [nativeQuery, query]);
-
-  const handleQueryChange = (next: string) => {
-    if (next !== query) {
-      onChangeQuery(next);
-    }
-  };
-
   const trimmedQuery = query.trim();
   const isCacheEmpty = busStopsCount === 0;
 
@@ -168,26 +128,27 @@ export function SearchOverlay({
           gap: e.spacing.sm,
         }}
       >
-        <View style={styles.searchBarHost}>
-          <OutlinedTextField
-            value={nativeQuery}
-            onValueChange={handleQueryChange}
+        <View
+          style={[
+            styles.searchBarHost,
+            {
+              borderColor: colors.outline,
+              borderRadius: e.radius.medium,
+            },
+          ]}
+        >
+          <Search color={colors.onSurfaceVariant} size={20} strokeWidth={2.2} />
+          <TextInput
+            value={query}
+            onChangeText={onChangeQuery}
             autoFocus
-            singleLine
-            keyboardOptions={{
-              capitalization: 'none',
-              autoCorrectEnabled: false,
-              keyboardType: 'text',
-              imeAction: 'search'
-            }}
-          >
-            <OutlinedTextField.LeadingIcon>
-              <SearchLeadingIcon tint={colors.onSurfaceVariant} />
-            </OutlinedTextField.LeadingIcon>
-            <OutlinedTextField.Placeholder>
-              <SearchPlaceholder color={colors.onSurfaceVariant} text="Search stops" />
-            </OutlinedTextField.Placeholder>
-          </OutlinedTextField>
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="Search stops"
+            placeholderTextColor={colors.onSurfaceVariant}
+            returnKeyType="search"
+            style={[styles.searchInput, { color: colors.onSurface }]}
+          />
         </View>
         <Pressable
           accessibilityRole="button"
@@ -323,41 +284,21 @@ function EmptyCachePrompt({
           : 'No bus stops cached yet. Open settings to add your LTA AccountKey and sync bus stops.'}
       </Text>
       <View style={{ height: e.spacing.md }} />
-      <OutlinedButton
-        onClick={onOpenSettings}
-        colors={{ contentColor: colors.primary, containerColor: 'transparent' }}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Open settings"
+        onPress={onOpenSettings}
+        style={({ pressed }) => [
+          styles.emptyCacheButton,
+          {
+            borderColor: colors.outlineVariant,
+            backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+          },
+        ]}
       >
         <Text style={{ color: colors.primary, fontWeight: '800' }}>Open settings</Text>
-      </OutlinedButton>
+      </Pressable>
     </View>
-  );
-}
-
-function SearchPlaceholder({ color, text }: { color: string; text: string }) {
-  return <Text style={{ color }}>{text}</Text>;
-}
-
-// Android-safe leading icon for the `OutlinedTextField.LeadingIcon`
-// slot. The slot is a Compose icon slot, so the only @expo/ui-supported
-// icon source is the Compose `Icon` component with a local XML vector
-// drawable asset. The asset path resolves to
-// `assets/icons/search.xml`, a filled magnifying-glass outline that
-// tints to `colors.onSurfaceVariant` at runtime. This replaces the
-// previous Unicode-character-in-an-RN-Text fallback which rendered as
-// a non-Compose child inside a Compose slot.
-function SearchLeadingIcon({ tint }: { tint: string }) {
-  // The `require` call is statically analyzable by Metro so the asset
-  // is bundled into the Android build. The `tint` prop applies at
-  // runtime so the glyph remains legible in both light and dark
-  // themes without shipping per-theme assets.
-  const searchIconSource = require('../../assets/icons/search.xml');
-  return (
-    <Icon
-      source={searchIconSource}
-      tint={tint}
-      size={20}
-      contentDescription="Search"
-    />
   );
 }
 
@@ -370,14 +311,32 @@ const styles = StyleSheet.create({
     top: 0,
   },
   searchBarHost: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
+    flexDirection: 'row',
+    gap: 10,
     height: 56,
-    backgroundColor: 'transparent',
+    paddingHorizontal: 14,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    minWidth: 0,
+    paddingVertical: 0,
   },
   closeButton: {
     alignItems: 'center',
     height: 40,
     justifyContent: 'center',
     width: 40,
+  },
+  emptyCacheButton: {
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 18,
   },
 });

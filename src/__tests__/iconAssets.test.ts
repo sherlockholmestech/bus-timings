@@ -137,35 +137,23 @@ describe('runtime-android-icons-visible: assets', () => {
 });
 
 describe('runtime-android-icons-visible: SearchOverlay', () => {
-  it('uses the Compose Icon component with the local vector drawable in the LeadingIcon slot', () => {
+  it('uses a lucide search glyph in a React Native TextInput shell', () => {
     const source = readSource(searchOverlayPath);
-    if (!/OutlinedTextField\.LeadingIcon/.test(source)) {
+    if (!/from 'lucide-react-native'/.test(source) || !/\bSearch\b/.test(source)) {
       throw new Error(
-        'SearchOverlay must render the Compose `OutlinedTextField.LeadingIcon` slot.'
+        'SearchOverlay must render the search glyph with a lucide `Search` icon.'
       );
     }
-    // The slot must be filled with the @expo/ui Compose `Icon`
-    // component (re-exported from `../ui` as `Icon`). A lucide
-    // `Search` icon, a React Native `Text` shim with a Unicode
-    // character, or any SVG child would be a non-Compose child
-    // inside a Compose icon slot, which the contract forbids.
-    if (!/require\(['"]\.\.\/\.\.\/assets\/icons\/search\.xml['"]\)/.test(source)) {
+    if (!/<TextInput\b/.test(source)) {
       throw new Error(
-        'SearchOverlay must `require` the local `assets/icons/search.xml` ' +
-          'vector drawable. The Compose `Icon` component only supports ' +
-          'Android-safe icon sources for Compose slots.'
+        'SearchOverlay must use a React Native `TextInput` so no nested Compose ' +
+          'text field crosses a non-Compose view boundary.'
       );
     }
-    if (!/<Icon\b[^>]*\bsource=\{searchIconSource\}/.test(source)) {
+    if (/OutlinedTextField|OutlinedTextField\.LeadingIcon|<Icon\b/.test(source)) {
       throw new Error(
-        'SearchOverlay must pass the vector drawable `source` to the Compose `Icon` component.'
-      );
-    }
-    if (!/<Icon\b[^>]*\btint=/.test(source)) {
-      throw new Error(
-        'SearchOverlay must pass a `tint` to the Compose `Icon` component ' +
-          'so the glyph is recolored to the theme `onSurfaceVariant` color ' +
-          'in light and dark themes.'
+        'SearchOverlay must not render Compose text-field or icon-slot components ' +
+          'inside the React Native overlay.'
       );
     }
     // Defensive: the previous Unicode-character implementation must
@@ -176,9 +164,7 @@ describe('runtime-android-icons-visible: SearchOverlay', () => {
     if (/<Text\b[^>]*>\s*⌕\s*<\/Text>/.test(source)) {
       throw new Error(
         'SearchOverlay still renders the Unicode `⌕` search glyph inside a ' +
-          '<Text> child. The Compose `LeadingIcon` slot must use a Compose ' +
-          '`Icon` with the local vector drawable, not a non-Compose text ' +
-          'character.'
+          '<Text> child. The search field must use a lucide vector glyph.'
       );
     }
   });

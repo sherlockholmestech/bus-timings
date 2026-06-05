@@ -23,21 +23,14 @@
 // Android in light and dark themes.
 
 import { ChevronLeft } from 'lucide-react-native';
-import React, { useEffect } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import React from 'react';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppTheme } from '../theme';
 import { LoadState, ThemeChoice } from '../types';
 import {
   ActivityIndicator,
-  HorizontalDivider,
-  LinearProgressIndicator,
-  OutlinedButton,
-  OutlinedTextField,
-  SegmentedButton,
-  SingleChoiceSegmentedButtonRow,
   Text,
-  useNativeState,
 } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 
@@ -102,8 +95,9 @@ export function SettingsOverlay({
           style={({ pressed }) => [
             styles.iconButton,
             {
-              backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
-              borderRadius: 20,
+              backgroundColor: pressed ? colors.elevation.level2 : colors.surfaceVariant,
+              borderRadius: e.radius.large,
+              transform: [{ scale: pressed ? 0.96 : 1 }],
             },
           ]}
         >
@@ -138,17 +132,14 @@ export function SettingsOverlay({
         </Text>
         <AccountKeyField draftKey={draftKey} onChange={onChangeDraftKey} />
         <View style={{ height: e.spacing.md }} />
-        <OutlinedButton
-          onClick={onSaveAccountKey}
-          colors={{ containerColor: colors.primary, contentColor: colors.onPrimary }}
-        >
-          <Text style={{ color: colors.onPrimary, fontWeight: '900' }}>Save key</Text>
-        </OutlinedButton>
-
-        <HorizontalDivider
-          color={colors.outlineVariant}
-          thickness={StyleSheet.hairlineWidth}
+        <SettingsButton
+          label="Save key"
+          onPress={onSaveAccountKey}
+          backgroundColor={colors.primary}
+          textColor={colors.onPrimary}
         />
+
+        <View style={{ backgroundColor: colors.outlineVariant, height: StyleSheet.hairlineWidth }} />
         <View style={{ height: e.spacing.xl }} />
 
         <Text
@@ -168,23 +159,34 @@ export function SettingsOverlay({
           Sync downloads LTA bus stops for search and map markers. Arrival timings and
           route previews load live from LTA.
         </Text>
-        <OutlinedButton
-          onClick={onSyncBusStops}
-          enabled={busStopState !== 'loading'}
-          colors={{ contentColor: colors.primary, containerColor: 'transparent' }}
-        >
-          {busStopState === 'loading' ? (
-            <ActivityIndicator color={colors.primary} size={18} />
-          ) : (
-            <Text style={{ color: colors.primary, fontWeight: '800' }}>Sync bus stops</Text>
-          )}
-        </OutlinedButton>
+        <SettingsButton
+          label="Sync bus stops"
+          onPress={onSyncBusStops}
+          disabled={busStopState === 'loading'}
+          backgroundColor={colors.secondaryContainer}
+          textColor={colors.onSecondaryContainer}
+          borderColor="transparent"
+          loading={busStopState === 'loading'}
+        />
         {busStopState === 'loading' ? (
           <View style={{ marginTop: e.spacing.md }}>
-            <LinearProgressIndicator
-              progress={syncProgress}
-              color={colors.primary}
-            />
+            <View
+              accessibilityRole="progressbar"
+              style={[
+                styles.progressTrack,
+                { backgroundColor: colors.surfaceVariant },
+              ]}
+            >
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    backgroundColor: colors.primary,
+                    width: `${Math.max(0, Math.min(1, syncProgress)) * 100}%`,
+                  },
+                ]}
+              />
+            </View>
             <Text
               variant="bodySmall"
               style={{ color: colors.onSurfaceVariant, marginTop: e.spacing.sm }}
@@ -194,10 +196,7 @@ export function SettingsOverlay({
           </View>
         ) : null}
 
-        <HorizontalDivider
-          color={colors.outlineVariant}
-          thickness={StyleSheet.hairlineWidth}
-        />
+        <View style={{ backgroundColor: colors.outlineVariant, height: StyleSheet.hairlineWidth }} />
         <View style={{ height: e.spacing.xl }} />
 
         <Text
@@ -206,34 +205,123 @@ export function SettingsOverlay({
         >
           Theme
         </Text>
-        <SingleChoiceSegmentedButtonRow>
-          <SegmentedButton
+        <View
+          accessibilityRole="radiogroup"
+          style={[
+            styles.segmentedRow,
+            { borderColor: colors.outlineVariant, borderRadius: e.radius.medium },
+          ]}
+        >
+          <ThemeSegment
+            label="System"
             selected={themeChoice === 'system'}
-            onClick={() => onThemeChange('system')}
-          >
-            <SegmentedButton.Label>
-              <Text style={{ fontWeight: '700' }}>System</Text>
-            </SegmentedButton.Label>
-          </SegmentedButton>
-          <SegmentedButton
+            onPress={() => onThemeChange('system')}
+            colors={colors}
+          />
+          <ThemeSegment
+            label="Light"
             selected={themeChoice === 'light'}
-            onClick={() => onThemeChange('light')}
-          >
-            <SegmentedButton.Label>
-              <Text style={{ fontWeight: '700' }}>Light</Text>
-            </SegmentedButton.Label>
-          </SegmentedButton>
-          <SegmentedButton
+            onPress={() => onThemeChange('light')}
+            colors={colors}
+          />
+          <ThemeSegment
+            label="Dark"
             selected={themeChoice === 'dark'}
-            onClick={() => onThemeChange('dark')}
-          >
-            <SegmentedButton.Label>
-              <Text style={{ fontWeight: '700' }}>Dark</Text>
-            </SegmentedButton.Label>
-          </SegmentedButton>
-        </SingleChoiceSegmentedButtonRow>
+            onPress={() => onThemeChange('dark')}
+            colors={colors}
+          />
+        </View>
       </ScrollView>
     </View>
+  );
+}
+
+function SettingsButton({
+  label,
+  onPress,
+  disabled,
+  loading,
+  backgroundColor,
+  borderColor,
+  textColor,
+}: {
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+  backgroundColor?: string;
+  borderColor?: string;
+  textColor: string;
+}) {
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={disabled ? { disabled: true } : undefined}
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.button,
+        {
+          backgroundColor: pressed ? (backgroundColor ?? colors.elevation.level2) : (backgroundColor ?? 'transparent'),
+          borderColor: borderColor ?? backgroundColor ?? 'transparent',
+          borderRadius: e.radius.extraLarge,
+          opacity: disabled ? 0.65 : 1,
+          transform: [{ scale: pressed ? 0.97 : 1 }],
+        },
+      ]}
+    >
+      {loading ? (
+        <ActivityIndicator color={textColor} size={18} />
+      ) : (
+        <Text style={{ color: textColor, fontWeight: '900' }}>{label}</Text>
+      )}
+    </Pressable>
+  );
+}
+
+function ThemeSegment({
+  label,
+  selected,
+  onPress,
+  colors,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  colors: AppTheme['colors'];
+}) {
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityLabel={label}
+      accessibilityState={{ checked: selected }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.segment,
+        {
+          backgroundColor: selected
+            ? colors.primaryContainer
+            : pressed
+              ? colors.elevation.level2
+              : 'transparent',
+          borderRightColor: colors.outlineVariant,
+        },
+      ]}
+    >
+      <Text
+        style={{
+          color: selected ? colors.onPrimaryContainer : colors.onSurface,
+          fontWeight: '800',
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -244,45 +332,33 @@ function AccountKeyField({
   draftKey: string;
   onChange: (value: string) => void;
 }) {
-  // Compose `OutlinedTextField` requires its value as an `ObservableState` (a
-  // shared, native-backed state created with `useNativeState`). We mirror the
-  // parent `draftKey` into a local native state so the field is fully native
-  // and bridges changes back through `onChange`.
-  const nativeValue = useNativeState(draftKey);
-
-  // Sync the parent-controlled `draftKey` into the native state so external
-  // changes (e.g. first-launch restore, programmatic clear) are reflected in
-  // the field without remounting the underlying Compose view.
-  useEffect(() => {
-    if (nativeValue.value !== draftKey) {
-      nativeValue.value = draftKey;
-    }
-  }, [draftKey, nativeValue]);
+  const theme = useTheme<AppTheme>();
+  const colors = theme.colors;
+  const e = theme.expressive;
 
   return (
-    <View>
-      <OutlinedTextField
-        value={nativeValue}
-        onValueChange={(value) => {
-          if (value !== draftKey) {
-            onChange(value);
-          }
-        }}
-        visualTransformation="password"
-        singleLine
-        autoFocus={false}
-        keyboardOptions={{ capitalization: 'none', autoCorrectEnabled: false, keyboardType: 'text' }}
-      >
-        <OutlinedTextField.Label>AccountKey</OutlinedTextField.Label>
-        <OutlinedTextField.Placeholder>Paste AccountKey</OutlinedTextField.Placeholder>
-      </OutlinedTextField>
-    </View>
+    <TextInput
+      value={draftKey}
+      onChangeText={onChange}
+      secureTextEntry
+      autoCapitalize="none"
+      autoCorrect={false}
+      placeholder="Paste AccountKey"
+      placeholderTextColor={colors.onSurfaceVariant}
+      style={[
+        styles.input,
+        {
+          borderColor: colors.outline,
+          borderRadius: e.radius.medium,
+          color: colors.onSurface,
+        },
+      ]}
+    />
   );
 }
 
 // Re-exported to keep the previous public surface stable.
-export { useTheme, useNativeState, Text };
-void Platform;
+export { useTheme, Text };
 
 const styles = StyleSheet.create({
   overlay: {
@@ -303,5 +379,38 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     width: '100%',
+  },
+  input: {
+    borderWidth: StyleSheet.hairlineWidth,
+    fontSize: 16,
+    minHeight: 56,
+    paddingHorizontal: 16,
+  },
+  button: {
+    alignItems: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: 'center',
+    minHeight: 48,
+    paddingHorizontal: 22,
+  },
+  progressTrack: {
+    borderRadius: 2,
+    height: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+  },
+  segmentedRow: {
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  segment: {
+    alignItems: 'center',
+    borderRightWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 44,
   },
 });
