@@ -448,18 +448,18 @@ function RefreshButton({
       style={({ pressed }) => [
         styles.refreshHost,
         {
-          borderRadius: e.radius.extraLarge,
+          borderRadius: e.radius.small,
           borderColor: 'transparent',
-          backgroundColor: pressed ? colors.elevation.level3 : colors.primaryContainer,
+          backgroundColor: pressed ? colors.inversePrimary : colors.primary,
           transform: [{ scale: pressed ? 0.96 : 1 }],
         },
       ]}
     >
       <View pointerEvents="none" style={styles.refreshInner}>
         {isRefreshing ? (
-          <ActivityIndicator color={colors.primary} size={18} />
+          <ActivityIndicator color={colors.onPrimary} size={18} />
         ) : (
-          <RefreshCw color={colors.primary} size={20} strokeWidth={2.3} />
+          <RefreshCw color={colors.onPrimary} size={20} strokeWidth={2.3} />
         )}
       </View>
     </Pressable>

@@ -97,30 +97,37 @@ export function ArrivalRow({
             alignItems: 'center',
             alignSelf: 'stretch',
             backgroundColor: isRouteSelected ? colors.elevation.level2 : 'transparent',
-            borderLeftColor: isRouteSelected ? colors.primary : operatorAccent,
-            borderLeftWidth: 4,
             borderRadius: e.radius.small,
+            flexDirection: 'row',
             justifyContent: 'center',
             minHeight: 54,
-            paddingLeft: e.spacing.sm,
             paddingRight: e.spacing.xs,
           }}
         >
-          <Text
-            variant="titleMedium"
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            style={{ color: isRouteSelected ? colors.primary : colors.onSurface, fontWeight: '900', lineHeight: 24 }}
-          >
-            {service.ServiceNo}
-          </Text>
-          <Text
-            variant="labelSmall"
-            numberOfLines={1}
-            style={{ color: colors.onSurfaceVariant, fontWeight: '800', marginTop: 1 }}
-          >
-            {service.Operator}
-          </Text>
+          <View
+            style={{
+              alignSelf: 'stretch',
+              backgroundColor: isRouteSelected ? colors.primary : operatorAccent,
+              width: 4,
+            }}
+          />
+          <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center' }}>
+            <Text
+              variant="titleMedium"
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              style={{ color: isRouteSelected ? colors.primary : colors.onSurface, fontWeight: '900', lineHeight: 24 }}
+            >
+              {service.ServiceNo}
+            </Text>
+            <Text
+              variant="labelSmall"
+              numberOfLines={1}
+              style={{ color: colors.onSurfaceVariant, fontWeight: '800', marginTop: 1 }}
+            >
+              {service.Operator}
+            </Text>
+          </View>
         </Pressable>
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -188,7 +195,7 @@ function FavoriteToggle({
               ? colors.elevation.level2
               : 'transparent',
           borderColor: isFavorite ? 'transparent' : colors.outlineVariant,
-          borderRadius: e.radius.large,
+          borderRadius: e.radius.small,
           transform: [{ scale: pressed ? 0.94 : 1 }],
         },
       ]}

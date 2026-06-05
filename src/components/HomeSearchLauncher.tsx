@@ -12,7 +12,7 @@
 // rendered inside a `pointerEvents="none"` child view so the press
 // surface remains the outer `Pressable` and the child does not
 // re-route touches away from the activation handler. The `Pressable`
-// provides the rounded-pill background, border, and pressed-state
+// provides the softly rounded square background, border, and pressed-state
 // visual feedback so the affordance remains recognisable in both
 // light and dark themes without relying on a Compose `Surface`
 // ripple.
@@ -52,7 +52,7 @@ export function HomeSearchLauncher({ selectedStop, top, onOpenSearch }: HomeSear
         styles.root,
         {
           top,
-          borderRadius: e.radius.large,
+          borderRadius: e.radius.small,
           borderColor: colors.outlineVariant,
           backgroundColor: pressed ? colors.elevation.level2 : colors.surface,
           borderWidth: StyleSheet.hairlineWidth,

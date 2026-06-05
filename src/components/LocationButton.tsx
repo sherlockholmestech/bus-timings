@@ -52,7 +52,7 @@ export function LocationButton({ bottom, onPress }: LocationButtonProps) {
         style={({ pressed }) => [
           styles.buttonHost,
           {
-            borderRadius: e.radius.medium,
+            borderRadius: e.radius.small,
             borderColor: colors.outlineVariant,
             backgroundColor: pressed ? pressedContainerColor : containerColor,
           },

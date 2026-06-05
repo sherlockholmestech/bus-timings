@@ -133,7 +133,7 @@ export function SearchOverlay({
             styles.searchBarHost,
             {
               borderColor: colors.outline,
-              borderRadius: e.radius.medium,
+              borderRadius: e.radius.small,
             },
           ]}
         >
@@ -158,7 +158,7 @@ export function SearchOverlay({
             styles.closeButton,
             {
               backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
-              borderRadius: 20,
+              borderRadius: e.radius.small,
             },
           ]}
         >
@@ -292,6 +292,7 @@ function EmptyCachePrompt({
           styles.emptyCacheButton,
           {
             borderColor: colors.outlineVariant,
+            borderRadius: e.radius.small,
             backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
           },
         ]}
@@ -333,7 +334,6 @@ const styles = StyleSheet.create({
   },
   emptyCacheButton: {
     alignItems: 'center',
-    borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     justifyContent: 'center',
     minHeight: 42,

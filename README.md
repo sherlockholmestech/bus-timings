@@ -1,11 +1,14 @@
 # SG Bus Timings
 
-Android-only Expo SDK 56 app for Singapore bus arrivals, built on
-[`@expo/ui`](https://docs.expo.dev/uis/) / Jetpack Compose-backed
-controls with a free Leaflet + OpenStreetMap WebView map. The app uses
-the LTA DataMall Bus Arrival v3 and `BusStops` endpoints for live data
-and stores an LTA AccountKey, the bus-stop cache, favourites, and
-theme choice in `AsyncStorage`.
+Android-only Expo SDK 56 app for Singapore bus arrivals. The shell,
+header, drawer, search, and settings overlays are React Native —
+`View`, `Pressable`, `TextInput`, and `ActivityIndicator` — paired
+with a free Leaflet + OpenStreetMap WebView map. The app uses the LTA
+DataMall Bus Arrival v3 and `BusStops` endpoints for live data and
+stores an LTA AccountKey, the bus-stop cache, favourites, and theme
+choice in `AsyncStorage`. The `@expo/ui` package is kept as a locked
+dependency for the Compose re-exports in `src/ui/index.tsx`; no
+component currently consumes them.
 
 This repository is the Android-only build surface for the project. There
 is no iOS target and no web target — the Expo app config is locked to

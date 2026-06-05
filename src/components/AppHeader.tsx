@@ -61,7 +61,7 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
           containerColor={colors.secondaryContainer}
           pressedContainerColor={colors.elevation.level3}
           borderColor="transparent"
-          borderRadius={e.radius.extraLarge}
+          borderRadius={e.radius.small}
           onPress={onOpenFavorites}
         >
           <Star
@@ -76,7 +76,7 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
           containerColor={colors.surfaceVariant}
           pressedContainerColor={colors.elevation.level3}
           borderColor="transparent"
-          borderRadius={e.radius.extraLarge}
+          borderRadius={e.radius.small}
           onPress={onOpenSettings}
         >
           <Settings color={colors.onSurfaceVariant} size={21} strokeWidth={2.3} />

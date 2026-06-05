@@ -96,7 +96,7 @@ export function SettingsOverlay({
             styles.iconButton,
             {
               backgroundColor: pressed ? colors.elevation.level2 : colors.surfaceVariant,
-              borderRadius: e.radius.large,
+              borderRadius: e.radius.small,
               transform: [{ scale: pressed ? 0.96 : 1 }],
             },
           ]}
@@ -209,7 +209,7 @@ export function SettingsOverlay({
           accessibilityRole="radiogroup"
           style={[
             styles.segmentedRow,
-            { borderColor: colors.outlineVariant, borderRadius: e.radius.medium },
+            { borderColor: colors.outlineVariant, borderRadius: e.radius.small },
           ]}
         >
           <ThemeSegment
@@ -269,7 +269,7 @@ function SettingsButton({
         {
           backgroundColor: pressed ? (backgroundColor ?? colors.elevation.level2) : (backgroundColor ?? 'transparent'),
           borderColor: borderColor ?? backgroundColor ?? 'transparent',
-          borderRadius: e.radius.extraLarge,
+          borderRadius: e.radius.small,
           opacity: disabled ? 0.65 : 1,
           transform: [{ scale: pressed ? 0.97 : 1 }],
         },
