@@ -1,33 +1,23 @@
-// The interactive `favourites` and `settings` actions are rendered with
-// `@expo/ui/jetpack-compose`'s `IconButton` so the touch surface is a
-// native Jetpack Compose control. The surrounding `View` exists only
-// for the absolute positioning required by the shell — the Compose
-// control itself does not have a flexbox-based "row" placement story,
-// so we keep a layout-only React Native wrapper that hosts it. The
-// `matchContents` Host inside the root `App.tsx` is what makes the
-// `IconButton` a real Compose view that honours the same `Host`
-// colorScheme as the rest of the shell.
+// The interactive `favourites` and `settings` actions are rendered as
+// React Native `Pressable` controls so the press surface owns the
+// activation handler directly. TalkBack traverses the React Native
+// view tree, not any embedded Compose tree, so the `Pressable` is
+// also the accessibility boundary: `accessibilityRole="button"` and
+// `accessibilityLabel` are attached to the same element that receives
+// the press, so a single tap (or a TalkBack double-tap) activates the
+// action without depending on a nested control's `onClick`.
 //
-// The wrapping `View` is also the React Native accessibility boundary
-// for the icon-only Compose control: TalkBack traverses the React
-// Native view tree, not the embedded Compose tree, so we expose the
-// `accessibilityRole="button"` + `accessibilityLabel` pair on the
-// wrapper. This is what lets screen-reader users discover and activate
-// the favourites and settings actions without depending on the icon
-// glyph alone (the icons are decorative Star/Settings vectors that
-// carry no semantic content on their own).
-//
-// We intentionally keep the React Native `View` borders / sizing
-// visible behind the Compose control so the affordance remains
-// recognisable even when the Compose control is unstyled on first
-// paint. Compose `IconButton` is itself an interactive role, so the
-// underlying semantics already announce it as a button.
+// The icons are decorative Star/Settings lucide vectors — they carry
+// no semantic content on their own, which is why the `Pressable`
+// also exposes a TalkBack-readable label. The `Pressable` provides
+// the border, background, and pressed-state visual feedback so the
+// affordance remains recognisable in both light and dark themes
+// without relying on a Compose `IconButton` ripple.
 
 import { Settings, Star } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { IconButton } from '../ui';
 import { AppTheme } from '../theme';
 import { Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
@@ -69,7 +59,7 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
         <HeaderIconButton
           accessibilityLabel="Open favourites"
           containerColor={colors.elevation.level3}
-          contentColor={colors.secondary}
+          pressedContainerColor={colors.elevation.level2}
           borderColor={colors.outlineVariant}
           borderRadius={e.radius.medium}
           onPress={onOpenFavorites}
@@ -79,7 +69,7 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
         <HeaderIconButton
           accessibilityLabel="Open settings"
           containerColor={colors.elevation.level3}
-          contentColor={colors.onSurface}
+          pressedContainerColor={colors.elevation.level2}
           borderColor={colors.outlineVariant}
           borderRadius={e.radius.medium}
           onPress={onOpenSettings}
@@ -93,15 +83,22 @@ export function AppHeader({ topBarHeight, topInset, onOpenFavorites, onOpenSetti
 
 type HeaderIconButtonProps = {
   /**
-   * TalkBack-readable label for the icon-only Compose control. The
-   * label is exposed on the React Native wrapper that hosts the
-   * Compose `IconButton` so that screen-reader users can discover and
-   * activate the action. Keep the label short and action-oriented
-   * (e.g. "Open favourites", "Open settings").
+   * TalkBack-readable label for the icon-only action. The label is
+   * attached to the same `Pressable` that owns the activation handler
+   * so a single tap (or a TalkBack double-tap) fires the action
+   * without depending on a nested control's `onClick`. Keep the label
+   * short and action-oriented (e.g. "Open favourites", "Open settings").
    */
   accessibilityLabel: string;
   containerColor: string;
-  contentColor: string;
+  /**
+   * Background colour rendered while the user is actively pressing
+   * the button. This is the React Native equivalent of the Compose
+   * `IconButton` ripple: a clear visual signal that the press is
+   * being received, even when the underlying icon glyph is the only
+   * child. Falls back to `containerColor` when omitted.
+   */
+  pressedContainerColor?: string;
   borderColor: string;
   borderRadius: number;
   onPress: () => void;
@@ -109,43 +106,55 @@ type HeaderIconButtonProps = {
 };
 
 /**
- * Layout-only React Native wrapper that hosts a Compose `IconButton`.
- * The wrapper is required because the shell needs absolute positioning
- * for the header and the Compose `IconButton` does not participate in
- * React Native flexbox flow. The wrapper is also the React Native
- * accessibility boundary for the icon-only Compose control, so we
- * expose `accessibilityRole="button"` and an `accessibilityLabel` here
- * for TalkBack.
+ * Icon-only header action rendered as a React Native `Pressable`.
+ *
+ * The `Pressable` owns the activation handler directly. There is no
+ * nested Compose `IconButton` or other wrapper that could swallow
+ * touches or leave the accessibility boundary without an `onPress`.
+ * TalkBack traverses the React Native view tree, not the embedded
+ * Compose tree, so attaching `accessibilityRole="button"` and
+ * `accessibilityLabel` to the same element that receives the press
+ * is what makes the action discoverable and activatable through
+ * Android accessibility and normal touch alike.
  */
 function HeaderIconButton({
   accessibilityLabel,
   containerColor,
-  contentColor,
+  pressedContainerColor,
   borderColor,
   borderRadius,
   onPress,
   children,
 }: HeaderIconButtonProps) {
   return (
-    <View
-      accessible
+    <Pressable
+      onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      style={[
+      hitSlop={8}
+      style={({ pressed }) => [
         styles.iconButtonHost,
         {
           borderRadius,
           borderColor,
+          backgroundColor: pressed
+            ? (pressedContainerColor ?? containerColor)
+            : containerColor,
         },
       ]}
     >
-      <IconButton
-        onClick={onPress}
-        colors={{ containerColor, contentColor }}
+      <View
+        // The inner View exists only to host the icon glyph with a
+        // fixed centred layout. The press surface is the outer
+        // `Pressable`, not this child — `pointerEvents="none"`
+        // ensures the child does not intercept the touch and
+        // re-route it away from the activation handler.
+        pointerEvents="none"
+        style={styles.iconButtonInner}
       >
         {children}
-      </IconButton>
-    </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -174,6 +183,13 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     height: 44,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 44,
+  },
+  iconButtonInner: {
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'center',
+    width: '100%',
   },
 });

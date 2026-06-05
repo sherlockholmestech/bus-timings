@@ -1,13 +1,20 @@
-// Arrival rows display one bus service at a stop. The favourite star is
-// a Compose `IconButton` (mirroring the icon-only actions in the app
-// header and the location control) so the toggle is a real Jetpack
-// Compose control rather than a React Native `Pressable`. The service
-// number remains a React Native `Pressable` because its visual includes
-// a custom 4 px left border that paints the operator accent and a
-// selected-state overlay that does not map cleanly onto a Compose
-// `Button` or `TextButton`. Behaviour parity (operator colour, selected
-// state, accessibility labels, three-arrival cap, WAB indicator, and
-// invalid-timestamp safety) is preserved on the React Native side.
+// Arrival rows display one bus service at a stop. The favourite star
+// is a React Native `Pressable` so the toggle's press surface owns
+// the activation handler directly. TalkBack traverses the React
+// Native view tree, so the `Pressable` is also the accessibility
+// boundary: `accessibilityRole="button"`, the star/unstar label, and
+// the selected accessibility state are all attached to the same
+// element that receives the press. A single tap (or a TalkBack
+// double-tap) toggles the favourite without depending on a nested
+// Compose `IconButton` `onClick`.
+//
+// The service number remains a React Native `Pressable` because its
+// visual includes a custom 4 px left border that paints the operator
+// accent and a selected-state overlay that does not map cleanly onto
+// a Compose `Button` or `TextButton`. Behaviour parity (operator
+// colour, selected state, accessibility labels, three-arrival cap,
+// WAB indicator, and invalid-timestamp safety) is preserved on the
+// React Native side.
 
 import { Accessibility, Star } from 'lucide-react-native';
 import React from 'react';
@@ -15,7 +22,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { BusArrival, BusServiceArrival, hasRenderableArrival, minutesUntilArrival } from '../lib/lta';
 import { AppTheme } from '../theme';
-import { IconButton, Text } from '../ui';
+import { Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 
 const CROWD_COLORS: Record<string, string> = {
@@ -140,14 +147,17 @@ export function ArrivalRow({
   );
 }
 
-// The favourite star is rendered inside a Compose `IconButton` so the
-// toggle is a native Jetpack Compose action. The outer React Native
-// `View` exists for absolute layout sizing (Compose controls do not
-// participate in React Native flexbox flow) and to expose a TalkBack-
-// readable label on the React Native accessibility boundary — TalkBack
-// traverses the React Native view tree, not the embedded Compose tree,
-// so the label is attached to the wrapper even though the press
-// surface itself is the Compose `IconButton`.
+// The favourite star is rendered inside a React Native `Pressable` so
+// the toggle's press surface owns the activation handler directly.
+// TalkBack traverses the React Native view tree, so the `Pressable`
+// is also the accessibility boundary: `accessibilityRole="button"`,
+// the star/unstar label, and the selected accessibility state are
+// all attached to the same element that receives the press. A single
+// tap (or a TalkBack double-tap) toggles the favourite without
+// depending on a nested Compose `IconButton` `onClick`. The lucide
+// `Star` glyph is rendered inside a `pointerEvents="none"` child view
+// so the press surface remains the outer `Pressable` and the child
+// does not re-route touches away from the activation handler.
 function FavoriteToggle({
   isFavorite,
   serviceNo,
@@ -159,30 +169,31 @@ function FavoriteToggle({
 }) {
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
+  const starColor = isFavorite ? colors.secondary : colors.onSurfaceVariant;
 
   return (
-    <View
-      accessible
+    <Pressable
+      onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={isFavorite ? `Unstar service ${serviceNo}` : `Star service ${serviceNo}`}
       accessibilityState={isFavorite ? { selected: true } : undefined}
-      style={styles.toggleHost}
+      hitSlop={8}
+      style={({ pressed }) => [
+        styles.toggleHost,
+        {
+          backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
+        },
+      ]}
     >
-      <IconButton
-        onClick={onPress}
-        colors={{
-          containerColor: 'transparent',
-          contentColor: isFavorite ? colors.secondary : colors.onSurfaceVariant,
-        }}
-      >
+      <View pointerEvents="none" style={styles.toggleInner}>
         <Star
-          color={isFavorite ? colors.secondary : colors.onSurfaceVariant}
-          fill={isFavorite ? colors.secondary : 'transparent'}
+          color={starColor}
+          fill={isFavorite ? starColor : 'transparent'}
           size={21}
           strokeWidth={2.2}
         />
-      </IconButton>
-    </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -238,8 +249,16 @@ function BusTime({ bus }: { bus: BusArrival }) {
 const styles = StyleSheet.create({
   toggleHost: {
     alignItems: 'center',
+    borderRadius: 8,
     height: 40,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 40,
+  },
+  toggleInner: {
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'center',
+    width: '100%',
   },
 });

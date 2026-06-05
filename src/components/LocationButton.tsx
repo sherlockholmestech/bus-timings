@@ -1,32 +1,25 @@
-// The floating location control is a Compose `FloatingActionButton` so
-// the press surface is a real Jetpack Compose Material 3 affordance
-// rather than a React Native `Pressable`. The outer `View` exists only
-// for the absolute positioning required by the shell — Compose's own
-// layout primitives cannot be positioned with React Native flexbox
-// coordinates, so the React Native `View` is a layout-only wrapper
-// that hosts the Compose control. The `matchContents` Host inside the
-// root `App.tsx` is what makes the `FloatingActionButton` a real
-// Compose view that honours the same `Host` colorScheme as the rest of
-// the shell.
+// The floating location control is a React Native `Pressable` so the
+// press surface owns the activation handler directly. TalkBack
+// traverses the React Native view tree, so the `Pressable` is also
+// the accessibility boundary: `accessibilityRole="button"` and
+// `accessibilityLabel="Go to current location"` are attached to the
+// same element that receives the press, so a single tap (or a
+// TalkBack double-tap) activates the action without depending on a
+// nested Compose `FloatingActionButton` `onClick`.
 //
-// The outer wrapper is also the React Native accessibility boundary for
-// the icon-only Compose control: we expose
-// `accessibilityRole="button"` and `accessibilityLabel="Go to current
-// location"` on the wrapper so TalkBack can announce the floating
-// action without depending on the lucide `LocateFixed` glyph.
-//
-// The lucide `LocateFixed` glyph is rendered inside the
-// `FloatingActionButton.Icon` slot so the icon uses the existing
-// `lucide-react-native` package instead of swapping to a vector
-// drawable. The FAB container colour is hardcoded to the dark-on-dark
-// contrast pair from the previous React Native implementation so the
-// floating control remains visually distinct in both themes.
+// The FAB container colour is hardcoded to the dark-on-dark contrast
+// pair from the previous React Native implementation so the floating
+// control remains visually distinct in both themes. The lucide
+// `LocateFixed` glyph is rendered inside a `pointerEvents="none"`
+// child view so the press surface remains the outer `Pressable` and
+// the child does not re-route touches away from the activation
+// handler. A `hitSlop` enlarges the touch target without resizing the
+// visible FAB so the button is comfortable to tap.
 
 import { LocateFixed } from 'lucide-react-native';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
-import { FloatingActionButton } from '../ui';
 import { AppTheme } from '../theme';
 import { useTheme } from '../ui/ThemeContext';
 
@@ -39,12 +32,11 @@ export function LocationButton({ bottom, onPress }: LocationButtonProps) {
   const theme = useTheme<AppTheme>();
   const colors = theme.colors;
   const e = theme.expressive;
+  const containerColor = theme.scheme === 'dark' ? '#100F0F' : '#282726';
+  const pressedContainerColor = theme.scheme === 'dark' ? '#1C1B1A' : '#3A3937';
 
   return (
     <View
-      accessible
-      accessibilityRole="button"
-      accessibilityLabel="Go to current location"
       style={[
         styles.layer,
         {
@@ -52,24 +44,24 @@ export function LocationButton({ bottom, onPress }: LocationButtonProps) {
         },
       ]}
     >
-      <View
-        style={[
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel="Go to current location"
+        hitSlop={12}
+        style={({ pressed }) => [
           styles.buttonHost,
           {
             borderRadius: e.radius.medium,
             borderColor: colors.outlineVariant,
+            backgroundColor: pressed ? pressedContainerColor : containerColor,
           },
         ]}
       >
-        <FloatingActionButton
-          onClick={onPress}
-          containerColor={theme.scheme === 'dark' ? '#100F0F' : '#282726'}
-        >
-          <FloatingActionButton.Icon>
-            <LocateFixed color="#FFFCF0" size={21} strokeWidth={2.3} />
-          </FloatingActionButton.Icon>
-        </FloatingActionButton>
-      </View>
+        <View pointerEvents="none" style={styles.iconHost}>
+          <LocateFixed color="#FFFCF0" size={21} strokeWidth={2.3} />
+        </View>
+      </Pressable>
     </View>
   );
 }
@@ -85,6 +77,13 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     height: 48,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 48,
+  },
+  iconHost: {
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'center',
+    width: '100%',
   },
 });

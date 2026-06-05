@@ -11,7 +11,7 @@ import { BusServiceArrival, BusStop } from '../lib/lta';
 import { ServiceRouteView } from '../lib/routeView';
 import { AppTheme } from '../theme';
 import { FavoriteService, LoadState } from '../types';
-import { ActivityIndicator, HorizontalDivider, IconButton, Text } from '../ui';
+import { ActivityIndicator, HorizontalDivider, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 import { ArrivalRow } from './ArrivalRow';
 import { InlineDrawer, type InlineDrawerMethods } from './InlineDrawer';
@@ -416,42 +416,42 @@ function RefreshButton({
   const colors = theme.colors;
   const e = theme.expressive;
 
-  // The refresh press surface is a Compose `IconButton` so the action
-  // is a real Jetpack Compose control rather than a React Native
-  // `Pressable`. The outer `View` exists for absolute layout sizing
-  // (Compose controls do not participate in React Native flexbox flow)
-  // and to expose a TalkBack-readable label on the React Native
-  // accessibility boundary — TalkBack traverses the React Native view
-  // tree, not the embedded Compose tree, so the label is attached to
-  // the wrapper even though the press surface is the Compose
-  // `IconButton`. The wrapper's `accessibilityState` reflects the
-  // current loading state so screen-reader users can hear when a
-  // refresh is in flight without depending on the spinner glyph.
+  // The refresh press surface is a React Native `Pressable` so the
+  // action's press surface owns the activation handler directly.
+  // TalkBack traverses the React Native view tree, so the `Pressable`
+  // is also the accessibility boundary: `accessibilityRole="button"`,
+  // the `accessibilityLabel`, and the `accessibilityState.busy` flag
+  // are attached to the same element that receives the press. A
+  // single tap (or a TalkBack double-tap) fires the refresh without
+  // depending on a nested Compose `IconButton` `onClick`. The lucide
+  // `RefreshCw` glyph (or the loading spinner) is rendered inside a
+  // `pointerEvents="none"` child view so the press surface remains
+  // the outer `Pressable` and the child does not re-route touches
+  // away from the activation handler.
   return (
-    <View
-      accessible
+    <Pressable
+      onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel="Refresh arrivals"
       accessibilityState={isRefreshing ? { busy: true } : undefined}
-      style={[
+      hitSlop={8}
+      style={({ pressed }) => [
         styles.refreshHost,
         {
           borderRadius: e.radius.small,
           borderColor: colors.outlineVariant,
+          backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
         },
       ]}
     >
-      <IconButton
-        onClick={onPress}
-        colors={{ containerColor: 'transparent', contentColor: colors.onSurface }}
-      >
+      <View pointerEvents="none" style={styles.refreshInner}>
         {isRefreshing ? (
           <ActivityIndicator color={colors.onSurface} size={18} />
         ) : (
           <RefreshCw color={colors.onSurface} size={20} strokeWidth={2.2} />
         )}
-      </IconButton>
-    </View>
+      </View>
+    </Pressable>
   );
 }
 
@@ -605,25 +605,24 @@ function RouteView({
                 : `${routeView.stops.length} stops across ${routeView.directions.length} direction${routeView.directions.length === 1 ? '' : 's'}`}
             </Text>
           </View>
-          <View
-            accessible
+          <Pressable
+            onPress={onCloseRoute}
             accessibilityRole="button"
             accessibilityLabel="Close route view"
-            style={[
+            hitSlop={8}
+            style={({ pressed }) => [
               styles.closeHost,
               {
                 borderRadius: e.radius.small,
                 borderColor: colors.outlineVariant,
+                backgroundColor: pressed ? colors.elevation.level2 : 'transparent',
               },
             ]}
           >
-            <IconButton
-              onClick={onCloseRoute}
-              colors={{ containerColor: 'transparent', contentColor: colors.onSurface }}
-            >
+            <View pointerEvents="none" style={styles.closeInner}>
               <X color={colors.onSurface} size={21} strokeWidth={2.2} />
-            </IconButton>
-          </View>
+            </View>
+          </Pressable>
         </View>
       </View>
       <HorizontalDivider color={colors.outlineVariant} thickness={StyleSheet.hairlineWidth} />
@@ -708,25 +707,40 @@ function RouteView({
 }
 
 const styles = StyleSheet.create({
-  // Layout-only React Native wrappers that host a Compose `IconButton`
-  // for the drawer's icon-only actions (refresh and close-route). The
-  // wrappers give the Compose controls a fixed size for absolute
-  // layout, and they expose a React Native accessibility boundary for
-  // TalkBack — the `accessibilityLabel` is read from the wrapper, not
-  // from the embedded Compose view tree.
+  // React Native `Pressable` press surfaces for the drawer's
+  // icon-only actions (refresh and close-route). Each `Pressable`
+  // owns its own activation handler so TalkBack can activate the
+  // action directly from the same element that exposes the
+  // accessibility label. The inner views exist only to centre the
+  // icon glyph and use `pointerEvents="none"` so they do not
+  // re-route touches away from the outer `Pressable`.
   refreshHost: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     height: 40,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 40,
+  },
+  refreshInner: {
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'center',
+    width: '100%',
   },
   closeHost: {
     alignItems: 'center',
     borderWidth: StyleSheet.hairlineWidth,
     height: 40,
     justifyContent: 'center',
+    overflow: 'hidden',
     width: 40,
+  },
+  closeInner: {
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'center',
+    width: '100%',
   },
   groupHeader: {
     borderBottomWidth: StyleSheet.hairlineWidth,
