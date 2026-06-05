@@ -189,26 +189,17 @@ export function AppContent({
     );
     return Math.max(peekHeight, Math.min(desiredOpenHeight, maxHeightBelowSearch));
   }, [mapTopInset, peekHeight, screenHeight]);
-  // The drawer's snap model is a 3-state array: `[hidden, peek,
-  // open]`. Index 0 is the new `hidden` state (height 0) that
-  // the drawer must support in addition to the existing `peek`
-  // and `open` states — see the runtime-ui-regression-fix
-  // milestone and the matching `drawerSnap.test.ts` cases. The
-  // interaction contract for drag-to-hide settles to index 0
-  // when the user drags the drawer below the peek threshold or
-  // flicks downward at or above the `closeVelocity` threshold;
-  // programmatic `snapToIndex(0)` collapses the drawer the
-  // same way. The "starts open" guarantee in `VAL-ARR-002` is
-  // preserved by initialising `sheetIndex` to `2` (open) and
-  // seeding `currentPosition` with `openHeight` so the map
-  // bottom inset and the location-button offset are correct
-  // before the first `onPositionChange` publishes a value.
-  const hiddenHeight = 0;
+  // The drawer's snap model is `[peek, open]`, so the smallest
+  // snap point is always the visible peek height. Downward drags
+  // and flings can collapse the drawer only to that minimum, not
+  // to a hidden zero-height state. The app still starts open by
+  // initialising `sheetIndex` to `1` and seeding `currentPosition`
+  // with `openHeight`.
   const snapPoints = useMemo(
-    () => [hiddenHeight, peekHeight, openHeight],
-    [hiddenHeight, peekHeight, openHeight]
+    () => [peekHeight, openHeight],
+    [peekHeight, openHeight]
   );
-  const [sheetIndex, setSheetIndex] = useState(2);
+  const [sheetIndex, setSheetIndex] = useState(1);
   // The live drawer height. The `InlineDrawer` publishes the
   // current pixel height on every gesture frame and on every
   // spring-animation frame, so the map bottom inset and the
@@ -255,13 +246,11 @@ export function AppContent({
     (stop: BusStop) => {
       setSelectedStop(stop);
       closeRoute();
-      // Open the drawer to the fully-open snap (index 2 in the
-      // `[hidden, peek, open]` snap model) so the user can see
+      // Open the drawer to the fully-open snap (index 1 in the
+      // `[peek, open]` snap model) so the user can see
       // the newly-selected stop's arrival rows without an
-      // additional gesture. The 3-snap migration keeps the
-      // public snap semantics (`snapToIndex(2)` = open) that
-      // every other call site now uses.
-      bottomSheetRef.current?.snapToIndex(2);
+      // additional gesture.
+      bottomSheetRef.current?.snapToIndex(1);
     },
     [closeRoute]
   );
@@ -401,12 +390,12 @@ export function AppContent({
         case 'clearSelectedStop':
           setSelectedStop(null);
           setArrivals(null);
-          // Open the drawer fully (index 2 in the new
-          // `[hidden, peek, open]` snap model) so the user
+          // Open the drawer fully (index 1 in the `[peek,
+          // open]` snap model) so the user
           // sees the favourites list with the selected-stop
           // context cleared. The back handler's "snap to open"
           // intent is preserved.
-          bottomSheetRef.current?.snapToIndex(2);
+          bottomSheetRef.current?.snapToIndex(1);
           return true;
         case 'system':
           return false;
@@ -443,12 +432,9 @@ export function AppContent({
       setShowSearch(false);
     }
     setQuery('');
-    // Snap to peek (index 1 in the new `[hidden, peek, open]`
-    // snap model) so the drawer remains visible at its resting
-    // peek height. The previous 2-snap model used
-    // `snapToIndex(0)` for this, but the new model reserves
-    // index 0 for the `hidden` (height 0) state.
-    bottomSheetRef.current?.snapToIndex(1);
+    // Snap to peek (index 0 in the `[peek, open]` snap model) so
+    // the drawer remains visible at its enforced minimum height.
+    bottomSheetRef.current?.snapToIndex(0);
     if (userLocation) {
       setLocationFocusRequest((request) => request + 1);
     }
@@ -659,10 +645,10 @@ export function AppContent({
     setQuery('');
     setShowSearch(false);
     setShowSettings(false);
-    // Open the drawer fully (index 2 in the `[hidden, peek,
-    // open]` snap model) so the favourites list is visible
+    // Open the drawer fully (index 1 in the `[peek, open]`
+    // snap model) so the favourites list is visible
     // without an additional gesture.
-    bottomSheetRef.current?.snapToIndex(2);
+    bottomSheetRef.current?.snapToIndex(1);
   };
 
   const openSettings = () => {
@@ -712,10 +698,9 @@ export function AppContent({
       // state but the drawer should stay where it is). The snap is
       // gated to the open branch so closing the route does not
       // unexpectedly drag the drawer back to its open snap point.
-      // Index 2 = open in the new `[hidden, peek, open]` snap
-      // model.
+      // Index 1 = open in the `[peek, open]` snap model.
       if (selectedRouteServiceNo !== serviceNo) {
-        bottomSheetRef.current?.snapToIndex(2);
+        bottomSheetRef.current?.snapToIndex(1);
       }
       await runSelectServiceRoute({
         accountKey,
@@ -803,9 +788,9 @@ export function AppContent({
   // height into React state. Using the live height — instead
   // of the settled `sheetIndex` — eliminates the lag between
   // the drawer's actual position and the map's bottom inset
-  // that the runtime-ui-regression validator flagged. When the
-  // drawer is in the new `hidden` (height 0) state, the inset
-  // is `0` and the map fills the whole shell.
+  // that the runtime-ui-regression validator flagged. The drawer
+  // never drops below the visible peek height, so the map inset
+  // always reserves that minimum drawer footprint.
   const mapBottomInset = currentPosition;
 
   return (
