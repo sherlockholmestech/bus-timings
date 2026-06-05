@@ -33,6 +33,14 @@ type ArrivalsDrawerProps = {
   selectedRouteServiceNo: string | null;
   snapPoints: number[];
   sheetIndex: number;
+  /**
+   * Live drawer height callback. The `InlineDrawer` publishes
+   * the current pixel height on every gesture frame and on
+   * every spring-animation frame so the map bottom inset and
+   * the location-button offset track the drawer's actual
+   * position rather than waiting for the snap to settle.
+   */
+  onPositionChange: (height: number) => void;
   onChange: (index: number) => void;
   onCloseRoute: () => void;
   onSelectServiceRoute: (serviceNo: string) => void;
@@ -56,6 +64,7 @@ export function ArrivalsDrawer({
   selectedRouteServiceNo,
   snapPoints,
   sheetIndex,
+  onPositionChange,
   onChange,
   onCloseRoute,
   onSelectServiceRoute,
@@ -125,6 +134,7 @@ export function ArrivalsDrawer({
       snapPoints={snapPoints}
       initialIndex={sheetIndex}
       onSettle={onChange}
+      onPositionChange={onPositionChange}
       style={{
         borderTopColor: colors.outlineVariant,
         borderTopWidth: StyleSheet.hairlineWidth,

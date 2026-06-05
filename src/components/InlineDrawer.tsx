@@ -41,6 +41,7 @@ import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
+  useAnimatedReaction,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -96,6 +97,19 @@ export type InlineDrawerProps = {
    */
   onSettle: (index: number) => void;
   /**
+   * Called on every change to the drawer's animated height while
+   * a drag is in progress and while a programmatic
+   * `snapToIndex` spring animation is playing. Receives the new
+   * pixel height. The parent uses this to publish the live
+   * drawer geometry to map bottom inset and location-button
+   * positioning so those consumers track the drawer's actual
+   * position instead of waiting for the snap to settle. The
+   * callback fires on the JS thread via `runOnJS`; it is
+   * intentionally separate from `onSettle` (which is the
+   * settled-state signal) so the two consumers cannot desync.
+   */
+  onPositionChange: (height: number) => void;
+  /**
    * Render-prop for the drag-handle area. The render-prop is
    * rendered inside the pan-gesture detector so dragging anywhere
    * in the handle area resizes the drawer. The handle is laid out
@@ -140,6 +154,7 @@ export const InlineDrawer = forwardRef<InlineDrawerMethods, InlineDrawerProps>(
       snapPoints,
       initialIndex = 0,
       onSettle,
+      onPositionChange,
       renderHandle,
       children,
       style,
@@ -221,6 +236,30 @@ export const InlineDrawer = forwardRef<InlineDrawerMethods, InlineDrawerProps>(
         onSettle(index);
       },
       [onSettle]
+    );
+
+    // Publish the live drawer height to the parent on every
+    // change. The reaction runs on the UI thread, but the
+    // callback is wrapped in `runOnJS` so the parent receives
+    // the new height on the JS thread and can update React
+    // state (e.g. `mapBottomInset` / `locationButtonBottom`).
+    // The reaction fires both during drag (the
+    // `.onUpdate` worklet mutates `height.value` on every
+    // gesture frame) and during the spring animation that
+    // follows a `snapToIndex` call or a gesture release, so
+    // the map inset and location-button offset stay in
+    // lockstep with the drawer's actual geometry instead of
+    // waiting for the snap to settle. The 0.5px minimum delta
+    // guards against floating-point noise firing the
+    // callback repeatedly when the height is at rest.
+    useAnimatedReaction(
+      () => height.value,
+      (current, previous) => {
+        if (previous === null || Math.abs(current - previous) >= 0.5) {
+          runOnJS(onPositionChange)(current);
+        }
+      },
+      [onPositionChange]
     );
 
     // The pan gesture. Each callback is a worklet that runs on
