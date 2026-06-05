@@ -152,13 +152,11 @@ function buildMapHtml() {
     .popup-title { color: #1a1c1a; font-weight: 800; margin-bottom: 2px; }
     .popup-meta { color: #414942; font-size: 12px; }
     .dark-tiles { filter: brightness(0.72) contrast(1.08) saturate(0.78); }
-    /* The default Leaflet attribution control sits at bottom-right,
-       which the arrivals drawer permanently obscures. We move the
-       Leaflet "topright" container down by a top offset (set from
-       the bridge payload) so the OSM attribution remains visible
-       below the search launcher but above the drawer, in both light
-       and dark themes. */
-    .leaflet-top.leaflet-right { top: 0; }
+    .leaflet-control-attribution {
+      border-top-left-radius: 8px;
+      margin-bottom: 0;
+      margin-right: 0;
+    }
   </style>
 </head>
 <body>
@@ -166,20 +164,14 @@ function buildMapHtml() {
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     const map = L.map('map', { zoomControl: false }).setView([1.3521, 103.8198], 12);
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
     const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
       detectRetina: true,
       updateWhenIdle: true,
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
-    // Move the default Leaflet attribution control to the top-right
-    // corner. The default bottom-right position is permanently
-    // hidden by the arrivals drawer; the render() function then
-    // pushes it down by the shell's top inset so it sits below the
-    // search launcher and remains visible in both light and dark
-    // themes. See VAL-MAP-034.
-    map.attributionControl.setPosition('topright');
+    map.attributionControl.setPosition('bottomright');
 
     let markerLayer = L.layerGroup().addTo(map);
     let routeLayer = L.layerGroup().addTo(map);
@@ -195,10 +187,6 @@ function buildMapHtml() {
     // initial center (Singapore fallback or available user
     // location) is applied exactly once. See VAL-MAP-033.
     let lastNormalCenterKey = null;
-    // Tracks the last top offset we applied to the Leaflet
-    // "topright" container so the OSM attribution sits below the
-    // search launcher in both light and dark themes.
-    let lastAttributionTopPx = -1;
     let boundsTimer = null;
 
     const post = (message) => {
@@ -246,20 +234,6 @@ function buildMapHtml() {
       const tileContainer = tileLayer.getContainer();
       if (tileContainer) {
         tileContainer.classList.toggle('dark-tiles', isDark);
-      }
-
-      // Push the OSM attribution control down by the shell's top
-      // inset so it sits below the search launcher and remains
-      // visible. The top offset is captured in pixels and only
-      // re-applied when the shell reports a new value, so we are
-      // not touching the DOM on every render.
-      const attributionTopPx = (payload.topInset || 0) + 8;
-      if (attributionTopPx !== lastAttributionTopPx) {
-        const topRightContainer = document.querySelector('.leaflet-top.leaflet-right');
-        if (topRightContainer) {
-          topRightContainer.style.top = attributionTopPx + 'px';
-        }
-        lastAttributionTopPx = attributionTopPx;
       }
 
       const routeLines = (payload.routeLines || []).filter((line) => line.length > 1);
