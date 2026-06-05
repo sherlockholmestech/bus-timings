@@ -1,7 +1,6 @@
-import { BottomSheet, BottomSheetScrollView, type BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import { RefreshCw, X, Star } from 'lucide-react-native';
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import {
   type FavoriteArrivalGroup,
@@ -15,12 +14,13 @@ import { FavoriteService, LoadState } from '../types';
 import { ActivityIndicator, HorizontalDivider, IconButton, Text } from '../ui';
 import { useTheme } from '../ui/ThemeContext';
 import { ArrivalRow } from './ArrivalRow';
+import { InlineDrawer, type InlineDrawerMethods } from './InlineDrawer';
 
 export type { FavoriteArrivalItem } from '../lib/favorites';
 
 type ArrivalsDrawerProps = {
   arrivalState: LoadState;
-  bottomSheetRef: React.RefObject<BottomSheetMethods | null>;
+  bottomSheetRef: React.RefObject<InlineDrawerMethods | null>;
   favoriteArrivalState: LoadState;
   favoriteItems: FavoriteArrivalItem[];
   favorites: FavoriteService[];
@@ -105,21 +105,57 @@ export function ArrivalsDrawer({
     />
   );
 
+  // The drawer is the `InlineDrawer` (a true inline non-modal
+  // surface) instead of the previous `@expo/ui/community/bottom-sheet`
+  // Material3 modal. The modal scrim was the source of the
+  // runtime regression: it blocked touches to the header, search
+  // launcher, location button, map markers, and the
+  // settings/search overlays while the drawer was visible. The
+  // `InlineDrawer` renders inline in the React Native view tree
+  // and uses `pointerEvents="box-none"` so touches outside the
+  // drawer reach the rest of the shell. The imperative
+  // `snapToIndex(index)` surface is preserved so the rest of the
+  // shell (select stop, favourites header action, location
+  // button, route handler, search result handler, Android back)
+  // continues to call into the drawer without changes.
   return (
-    <BottomSheet
+    <InlineDrawer
       ref={bottomSheetRef}
-      index={sheetIndex}
-      snapPoints={snapPoints.map((point) => `${point}px`)}
-      enableDynamicSizing={false}
-      onChange={onChange}
-      backgroundStyle={{
-        backgroundColor: colors.surface,
+      backgroundColor={colors.surface}
+      snapPoints={snapPoints}
+      initialIndex={sheetIndex}
+      onSettle={onChange}
+      style={{
+        borderTopColor: colors.outlineVariant,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        // The drawer overlays the Android system navigation bar /
+        // gesture handle; a soft shadow above the top edge keeps
+        // the affordance visible against the map in both themes.
+        shadowColor: colors.shadow,
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.12,
+        shadowRadius: 6,
+        elevation: 12,
       }}
+      renderHandle={() => (
+        <View
+          style={[
+            styles.handleBar,
+            {
+              backgroundColor: colors.outlineVariant,
+              borderRadius: 3,
+            },
+          ]}
+        />
+      )}
     >
-      <BottomSheetScrollView contentContainerStyle={{ paddingBottom: e.spacing.xl }}>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: e.spacing.xl }}
+        keyboardShouldPersistTaps="handled"
+      >
         {drawerContent}
-      </BottomSheetScrollView>
-    </BottomSheet>
+      </ScrollView>
+    </InlineDrawer>
   );
 }
 
@@ -699,5 +735,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
     gap: 12,
+  },
+  // The visible drag-indicator bar rendered inside the
+  // `InlineDrawer`'s handle slot. The width is wider than a
+  // Material 3 default and the height is taller so the bar is a
+  // reliable visual target alongside the gesture-handle area.
+  handleBar: {
+    height: 6,
+    width: 56,
   },
 });

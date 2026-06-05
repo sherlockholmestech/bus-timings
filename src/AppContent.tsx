@@ -1,5 +1,4 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { BottomSheetMethods } from '@expo/ui/community/bottom-sheet';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -13,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppHeader } from './components/AppHeader';
 import { ArrivalsDrawer } from './components/ArrivalsDrawer';
 import { HomeSearchLauncher } from './components/HomeSearchLauncher';
+import type { InlineDrawerMethods } from './components/InlineDrawer';
 import { LeafletMap } from './components/LeafletMap';
 import { LocationButton } from './components/LocationButton';
 import { SearchOverlay } from './components/SearchOverlay';
@@ -115,7 +115,13 @@ export function AppContent({
   const [favoritesLastUpdated, setFavoritesLastUpdated] = useState<Timestamp | null>(null);
 
   const arrivalTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const bottomSheetRef = useRef<BottomSheetMethods | null>(null);
+  // The drawer ref exposes the imperative `snapToIndex(index)`
+  // surface that the rest of the shell uses to drive the drawer
+  // from a select-stop / favourites / location / route / back
+  // event. The previous `@expo/ui/community/bottom-sheet`
+  // reference had the same call signature, so the call sites
+  // below are unchanged.
+  const bottomSheetRef = useRef<InlineDrawerMethods | null>(null);
   // Staleness guards for in-flight selected-stop, favourite arrivals,
   // and service route requests. Each live-data flow captures a token
   // before the await and re-checks the store after the promise
