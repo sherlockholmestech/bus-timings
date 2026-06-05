@@ -1,3 +1,19 @@
+// Compose icon slots must use Android-safe icon sources, not React
+// Native `Text` or SVG/lucide children. The previous implementation
+// rendered a Unicode "⌕" character inside a React Native `Text` shim
+// inside the `OutlinedTextField.LeadingIcon` slot; that combination
+// was a non-Compose child inside a Compose slot, which is the exact
+// pattern that the `runtime-android-icons-visible` regression fix
+// guards against. The fix is to use the @expo/ui Compose `Icon`
+// component with a local XML vector drawable asset, which is the
+// only @expo/ui-supported icon source for Compose icon slots and
+// renders natively on Android without depending on the system font
+// catalog. The `tint` prop recolors the asset at runtime so the
+// glyph is legible in both light and dark themes. The close
+// button remains a React Native `Pressable` with a lucide `X`
+// glyph (the "React Native control that renders a lucide icon
+// directly" path), so it is also Android-safe.
+
 import { X } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -6,6 +22,7 @@ import { BusStop } from '../lib/lta';
 import { formatSearchResultSubtitle } from '../lib/search';
 import { AppTheme } from '../theme';
 import {
+  Icon,
   OutlinedButton,
   OutlinedTextField,
   Text,
@@ -165,7 +182,7 @@ export function SearchOverlay({
             }}
           >
             <OutlinedTextField.LeadingIcon>
-              <SearchLeadingGlyph color={colors.onSurfaceVariant} />
+              <SearchLeadingIcon tint={colors.onSurfaceVariant} />
             </OutlinedTextField.LeadingIcon>
             <OutlinedTextField.Placeholder>
               <SearchPlaceholder color={colors.onSurfaceVariant} text="Search stops" />
@@ -320,11 +337,28 @@ function SearchPlaceholder({ color, text }: { color: string; text: string }) {
   return <Text style={{ color }}>{text}</Text>;
 }
 
-function SearchLeadingGlyph({ color }: { color: string }) {
-  // The `OutlinedTextField.LeadingIcon` slot expects Compose children. We
-  // render a Compose `Text` glyph so the leading affordance is a native
-  // primitive instead of a vector drawable we do not yet have on disk.
-  return <Text style={{ color }}>⌕</Text>;
+// Android-safe leading icon for the `OutlinedTextField.LeadingIcon`
+// slot. The slot is a Compose icon slot, so the only @expo/ui-supported
+// icon source is the Compose `Icon` component with a local XML vector
+// drawable asset. The asset path resolves to
+// `assets/icons/search.xml`, a filled magnifying-glass outline that
+// tints to `colors.onSurfaceVariant` at runtime. This replaces the
+// previous Unicode-character-in-an-RN-Text fallback which rendered as
+// a non-Compose child inside a Compose slot.
+function SearchLeadingIcon({ tint }: { tint: string }) {
+  // The `require` call is statically analyzable by Metro so the asset
+  // is bundled into the Android build. The `tint` prop applies at
+  // runtime so the glyph remains legible in both light and dark
+  // themes without shipping per-theme assets.
+  const searchIconSource = require('../../assets/icons/search.xml');
+  return (
+    <Icon
+      source={searchIconSource}
+      tint={tint}
+      size={20}
+      contentDescription="Search"
+    />
+  );
 }
 
 const styles = StyleSheet.create({

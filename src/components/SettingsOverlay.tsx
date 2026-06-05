@@ -1,3 +1,28 @@
+// The settings back/close action is rendered as a React Native
+// `Pressable` so the press surface owns the activation handler
+// directly. TalkBack traverses the React Native view tree, so the
+// `Pressable` is also the accessibility boundary:
+// `accessibilityRole="button"` and `accessibilityLabel="Close
+// settings"` are attached to the same element that receives the
+// press. The lucide `ChevronLeft` glyph is rendered inside a
+// `pointerEvents="none"` child view so the press surface remains
+// the outer `Pressable` and the child does not re-route touches
+// away from the activation handler.
+//
+// The previous implementation rendered a Unicode "‹" character
+// inside a React Native `Text` node. The character rendered
+// correctly on the tested Android system fonts, but using a lucide
+// vector glyph keeps the visual affordance consistent with the
+// header favourites/settings icons and the drawer controls, all
+// of which use lucide vectors. This is the "React Native control
+// that renders a lucide icon directly" path documented in the
+// `runtime-android-icons-visible` regression fix, so the
+// `SearchOverlay` (Compose icon slot, Android-safe XML drawable
+// asset) and the `SettingsOverlay` back action (React Native
+// `Pressable`, lucide vector) both render visible glyphs on
+// Android in light and dark themes.
+
+import { ChevronLeft } from 'lucide-react-native';
 import React, { useEffect } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
@@ -82,7 +107,9 @@ export function SettingsOverlay({
             },
           ]}
         >
-          <Text style={{ color: colors.onSurface, fontSize: 22, fontWeight: '700' }}>‹</Text>
+          <View pointerEvents="none" style={styles.iconInner}>
+            <ChevronLeft color={colors.onSurface} size={22} strokeWidth={2.2} />
+          </View>
         </Pressable>
         <View style={{ flex: 1, paddingLeft: e.spacing.sm }}>
           <Text variant="titleLarge" style={{ color: colors.onSurface, fontWeight: '800' }}>
@@ -270,5 +297,11 @@ const styles = StyleSheet.create({
     height: 40,
     justifyContent: 'center',
     width: 40,
+  },
+  iconInner: {
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'center',
+    width: '100%',
   },
 });
